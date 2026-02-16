@@ -1,0 +1,12 @@
+{
+  "project_name": "new-project",
+  "mission": "Add a robust Save/Load system to the Haunted Castle MUD. Players should be able to save their progress (HP, inventory, current room) to a 'savegame.json' file and load it upon starting or via a 'load' command. Ensure the Gatekeeper audits the security of the file loading logic.",
+  "status": "active",
+  "version": "0.1.0",
+  "current_phase": "designing",
+  "artifacts": {
+    "design_doc": "",
+    "tests": [],
+    "source_code": []
+  }
+}
