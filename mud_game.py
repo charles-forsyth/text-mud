@@ -124,7 +124,7 @@ class GameController:
             "3. [bold green]Rogue[/bold green] - Quick strike specialist, high crits (Backstab, Poison Strike)."
         )
         console.print(
-            "4. [bold white]Cleric[/bold yellow] - Holy healer, balances defensive shields with holy magic (Smite, Heal)."
+            "4. [bold white]Cleric[/bold white] - Holy healer, balances defensive shields with holy magic (Smite, Heal)."
         )
 
         class_choice = ""

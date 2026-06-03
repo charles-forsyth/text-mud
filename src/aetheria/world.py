@@ -40,6 +40,10 @@ class Room:
     def add_exit(self, direction: str, room: "Room"):
         self.exits[direction] = room
 
+    def get_exit(self, direction: str) -> Optional["Room"]:
+        """Returns the Room linked in the given direction, or None if no exit exists."""
+        return self.exits.get(direction.lower())
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,
