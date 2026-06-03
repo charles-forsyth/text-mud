@@ -17,7 +17,11 @@ from aetheria.world import build_default_world
 from aetheria.quests import get_default_quests
 from aetheria.combat import CombatManager
 from aetheria.save_system import save_game, load_game
-from aetheria.ai_engine import generate_npc_dialogue, generate_companion_banter
+from aetheria.ai_engine import (
+    generate_npc_dialogue,
+    generate_companion_banter,
+    generate_dynamic_room_description,
+)
 from aetheria.ui import (
     console,
     render_title_screen,
@@ -145,6 +149,57 @@ class GameController:
 
         return actions
 
+    def render_current_room(self):
+        """Generates dynamic descriptive context and renders the beautiful room panel."""
+        room = self.player.current_room
+
+        # Assemble items
+        items_list = [item.name for item in room.items]
+
+        # Assemble npcs
+        npcs_list = [(npc.name, npc.persona) for npc in room.npcs]
+
+        # Assemble enemy info
+        enemy_name = room.enemy.name if room.enemy else None
+        enemy_hp_info = (
+            f"({room.enemy.hp}/{room.enemy.max_hp} HP)"
+            if (room.enemy and room.enemy.is_alive)
+            else None
+        )
+
+        # Assemble party companions
+        party_list = [(c.name, c.personality) for c in self.party]
+
+        # Assemble quest context
+        quest_context = "No active quests."
+        active_ids = self.player.active_quests
+        if active_ids:
+            quest_context = ", ".join(
+                f"{self.quests[qid].name} (Status: In Progress)"
+                for qid in active_ids
+                if qid in self.quests
+            )
+
+        # Generate the dynamic description via ai_engine
+        dynamic_desc = generate_dynamic_room_description(
+            room_name=room.name,
+            base_description=room.description,
+            is_town=room.is_town,
+            items=items_list,
+            npcs=npcs_list,
+            enemy_name=enemy_name,
+            enemy_hp_info=enemy_hp_info,
+            player_name=self.player.name,
+            player_class=self.player.char_class,
+            party_members=party_list,
+            quest_context=quest_context,
+        )
+
+        # Call the render function
+        render_room_panel(
+            room, self.party, self.player, dynamic_description=dynamic_desc
+        )
+
     def run(self):
         render_title_screen()
         self.character_creation()
@@ -155,7 +210,7 @@ class GameController:
         )
 
         # Inital look of starting room
-        render_room_panel(self.player.current_room, self.party, self.player)
+        self.render_current_room()
 
         while self.is_running:
             # Check passive events: combat trigger first
@@ -292,7 +347,7 @@ class GameController:
             render_help_menu()
 
         elif verb in ["look", "l"]:
-            render_room_panel(self.player.current_room, self.party, self.player)
+            self.render_current_room()
 
         elif verb in ["go"] or verb in self.DIRECTIONS:
             direction = (
@@ -378,7 +433,7 @@ class GameController:
         )
 
         # Display new location info
-        render_room_panel(next_room, self.party, self.player)
+        self.render_current_room()
 
         # Trigger dynamic companion exploration banter (30% chance if party is populated)
         if self.party and random.random() < 0.35:
@@ -638,10 +693,36 @@ class GameController:
             f'\n💬 [bold green]You ask {npc.name} about: "{topic_sub}"...[/bold green]'
         )
 
+        # Build detailed player context and companion list
+        party_members = [(c.name, c.char_class) for c in self.party]
+        inventory_items = [item.name for item in self.player.inventory]
+
+        # Pull history from npc
+        if not hasattr(npc, "dialogue_history"):
+            npc.dialogue_history = []
+
         # Trigger Gemini generated response with procedural fallback
         dialogue = generate_npc_dialogue(
-            npc.name, npc.persona, topic_sub, self.player.name, quest_context
+            npc_name=npc.name,
+            persona=npc.persona,
+            topic=topic_sub,
+            player_name=self.player.name,
+            player_class=self.player.char_class,
+            player_level=self.player.level,
+            player_hp=self.player.hp,
+            player_max_hp=self.player.max_hp,
+            party_members=party_members,
+            inventory_items=inventory_items,
+            quest_context=quest_context,
+            dialogue_history=npc.dialogue_history,
         )
+
+        # Append this exchange to history (limit to last 5 turns / 10 lines)
+        npc.dialogue_history.append((self.player.name, topic_sub))
+        npc.dialogue_history.append((npc.name, dialogue))
+        if len(npc.dialogue_history) > 10:
+            npc.dialogue_history = npc.dialogue_history[-10:]
+
         console.print(f"[bold cyan]{npc.name}[/bold cyan]: {dialogue}")
 
         # Quest Triggering and Complete checks (Special interactive NPCs)
@@ -923,7 +1004,7 @@ class GameController:
         console.print(
             f"You revive inside the sanctuary. Deducted [bold yellow]{gold_fee}[/bold yellow] Gold coin fee as tithing."
         )
-        render_room_panel(self.player.current_room, self.party, self.player)
+        self.render_current_room()
 
     def trigger_quest_acceptance(self, quest_id: str):
         if quest_id not in self.quests:
@@ -1031,7 +1112,7 @@ class GameController:
             console.print(
                 "[bold green]💾 Save game file successfully loaded![/bold green]"
             )
-            render_room_panel(self.player.current_room, self.party, self.player)
+            self.render_current_room()
         except Exception as e:
             console.print(f"[bold red]❌ Error loading save game: {e}[/bold red]")
 

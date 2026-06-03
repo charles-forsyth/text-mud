@@ -8,21 +8,27 @@ class NPC:
         self.name = name
         self.persona = persona
         self.dialogue_context = dialogue_context
+        self.dialogue_history: list[tuple[str, str]] = []
 
     def to_dict(self) -> dict:
         return {
             "name": self.name,
             "persona": self.persona,
             "dialogue_context": self.dialogue_context,
+            "dialogue_history": self.dialogue_history,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "NPC":
-        return cls(
+        npc = cls(
             name=data["name"],
             persona=data["persona"],
             dialogue_context=data.get("dialogue_context", ""),
         )
+        # Convert any inner lists back to tuples
+        history_list = data.get("dialogue_history", [])
+        npc.dialogue_history = [(speaker, text) for speaker, text in history_list]
+        return npc
 
 
 class Room:

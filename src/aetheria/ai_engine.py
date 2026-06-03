@@ -1,4 +1,5 @@
 import google.generativeai as genai
+from typing import Optional, List, Tuple
 from aetheria.config import GEMINI_API_KEY, DEFAULT_AI_MODEL
 
 # Configure the Gemini API client
@@ -32,19 +33,60 @@ def call_gemini(prompt: str, temperature: float = 0.7) -> str:
 
 
 def generate_npc_dialogue(
-    npc_name: str, persona: str, topic: str, player_name: str, quest_context: str
+    npc_name: str,
+    persona: str,
+    topic: str,
+    player_name: str,
+    quest_context: str,
+    player_class: str = "Adventurer",
+    player_level: int = 1,
+    player_hp: int = 100,
+    player_max_hp: int = 100,
+    party_members: Optional[List[Tuple[str, str]]] = None,
+    inventory_items: Optional[List[str]] = None,
+    dialogue_history: Optional[List[Tuple[str, str]]] = None,
 ) -> str:
-    """Generates context-aware, in-character NPC responses using Gemini 3.1 Pro."""
+    """Generates context-aware, in-character NPC responses using Gemini Pro with full awareness of companions, inventory, and history."""
+
+    history_str = ""
+    if dialogue_history:
+        history_str = "\nRecent Conversation History:\n" + "\n".join(
+            f"{speaker}: {text}" for speaker, text in dialogue_history
+        )
+
+    party_str = "None"
+    if party_members:
+        party_str = ", ".join(
+            f"{name} ({char_class})" for name, char_class in party_members
+        )
+
+    inv_str = "None"
+    if inventory_items:
+        inv_str = ", ".join(inventory_items)
+
     prompt = f"""
-You are {npc_name}, an NPC in a dark, atmospheric text-based fantasy RPG game.
+You are {npc_name}, an NPC in a dark, rich, atmospheric text-based fantasy RPG game set in Aetheria.
 Your persona/background: {persona}
 
-A player named '{player_name}' is speaking to you.
-They want to talk to you about: "{topic}"
-Current quest context in the world: {quest_context}
+A player is speaking to you.
+Player Details:
+- Name: {player_name}
+- Class: {player_class} (Level {player_level})
+- HP: {player_hp}/{player_max_hp}
+- Inventory: {inv_str}
 
-Provide a immersive, atmospheric, in-character response. Keep it concise (1 to 4 sentences). 
+Active Companions traveling in the Player's Party:
+{party_str}
+
+Current Quest Context in the World:
+{quest_context}
+{history_str}
+
+The player says/asks about: "{topic}"
+
+Provide an immersive, atmospheric, in-character response. Keep it concise (1 to 4 sentences). 
 Speak directly in your unique voice. Do NOT include any meta-text, meta-tags, or markdown headers. Just your raw dialogue.
+If any companions are present, you are welcome to address them specifically (e.g. Lyra or Garrick) if appropriate or mention their class.
 """
     response = call_gemini(prompt, temperature=0.8)
     if response:
@@ -67,15 +109,27 @@ def generate_companion_banter(
     room_description: str,
     hp: int,
     max_hp: int,
+    other_companions: Optional[List[str]] = None,
+    player_name: str = "player",
+    quest_context: str = "",
 ) -> str:
-    """Generates exploration banter for active party companions."""
+    """Generates exploration banter for active party companions, fully aware of other party members and quests."""
+    others_str = ", ".join(other_companions) if other_companions else "None"
+
     prompt = f"""
-You are {companion_name}, a recruitable companion traveling in the player's party in a text RPG.
+You are {companion_name}, a recruitable companion traveling in the player's party in a text RPG set in Aetheria.
 Your personality and class details: {personality}
 Your current health: {hp}/{max_hp} HP
 
 You have just entered a room named '{room_name}'.
 Room Description: "{room_description}"
+
+Party Companions traveling with you:
+- Player: {player_name}
+- Other Companions: {others_str}
+
+Current Quest Context:
+{quest_context}
 
 Provide a brief, witty, or descriptive reaction or comment in-character about this room. 
 Keep it under 2 sentences. Do NOT include any meta-text, quotes around your entire response, or action descriptions (like '*sighs*'). Just your raw spoken dialogue.
@@ -138,3 +192,80 @@ Do NOT include action descriptions like '*swings sword*'. Just the spoken text.
             return '"Hold the line! We can survive this!"'
         else:
             return '"For honor and steel!"'
+
+
+def generate_dynamic_room_description(
+    room_name: str,
+    base_description: str,
+    is_town: bool,
+    items: List[str],
+    npcs: List[Tuple[str, str]],  # (name, persona)
+    enemy_name: Optional[str],
+    enemy_hp_info: Optional[str],
+    player_name: str,
+    player_class: str,
+    party_members: List[Tuple[str, str]],  # (name, class/personality)
+    quest_context: str,
+) -> str:
+    """Generates a highly immersive, cohesive, and context-aware description of the room based on present entities."""
+    party_str = "None"
+    if party_members:
+        party_str = ", ".join(f"{name} ({desc})" for name, desc in party_members)
+
+    npcs_str = "None"
+    if npcs:
+        npcs_str = ", ".join(f"{name} (Persona: {persona})" for name, persona in npcs)
+
+    items_str = "None"
+    if items:
+        items_str = ", ".join(items)
+
+    enemy_str = "None"
+    if enemy_name:
+        enemy_str = f"{enemy_name} {enemy_hp_info if enemy_hp_info else ''}"
+
+    prompt = f"""
+You are the narrator of a dark, immersive, atmospheric text-based fantasy RPG game set in the realm of Aetheria.
+Generate a rich, sensory, and context-aware description of the current room.
+
+Room Name: {room_name}
+Base Room Description: "{base_description}"
+Is it a Town Hub? {"Yes" if is_town else "No (Hostile Area)"}
+
+Entities and Objects currently present in the room:
+- Items on the floor: {items_str}
+- NPCs present: {npcs_str}
+- Enemies/Monsters lurking: {enemy_str}
+
+The Player's Party details:
+- Player: {player_name} ({player_class})
+- Active Companions: {party_str}
+
+Current Quest Context in the World:
+{quest_context}
+
+Write a beautiful, cohesive, atmospheric descriptive paragraph (2 to 4 sentences) for this room.
+Incorporate the presence of any NPCs, enemies, loot, or companions organically into the narrative. 
+For example, mention how companions react to the atmosphere, how local characters fit into the scene, or how a looming foe watches you.
+Do NOT repeat the name of the room. Keep it highly immersive and under 100 words. Do NOT include any meta-text, markdown tags, or headers.
+"""
+    response = call_gemini(prompt, temperature=0.7)
+    if response:
+        return response
+
+    # Clean procedural fallback
+    fallback_parts = [base_description]
+    if party_members:
+        names = [name for name, _ in party_members]
+        if len(names) == 1:
+            fallback_parts.append(f"{names[0]} stands beside you, looking around.")
+        else:
+            fallback_parts.append(
+                f"Your companions, {', '.join(names[:-1])} and {names[-1]}, watch your surroundings closely."
+            )
+    if npcs:
+        npc_names = [name for name, _ in npcs]
+        fallback_parts.append(f"You spot {', '.join(npc_names)} standing nearby.")
+    if enemy_name:
+        fallback_parts.append(f"A hostile {enemy_name} glares at you from the shadows.")
+    return " ".join(fallback_parts)
