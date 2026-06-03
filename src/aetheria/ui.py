@@ -15,7 +15,7 @@ console = Console()
 
 def render_title_screen():
     """Renders a beautiful premium RPG splash header."""
-    title_text = """
+    title_text = r"""
     _    _   _   _  _             _         __  __ _   _ ____  
    / \  | |_| |_| || | ___  _ __ (_) __ _  |  \/  | | | |  _ \ 
   / _ \ | __|  _  || |/ _ \| '__|| |/ _` | | |\/| | | | | | | |
