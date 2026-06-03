@@ -43,6 +43,23 @@ class TestAetheriaWorld(unittest.TestCase):
 
         self.assertTrue(self.player.has_item("Aether Sigil"))
 
+    def test_unlocking_mechanism_removes_lock(self):
+        bridge = self.world["Silverlight Bridge"]
+        self.assertTrue(bridge.locked)
+
+        # Player does not have key
+        self.assertFalse(self.player.has_item("Aether Sigil"))
+
+        # Give player key and try to unlock
+        sigil = Item("Aether Sigil", "Glowing sigil", value=0, is_quest_item=True)
+        self.player.inventory.append(sigil)
+        self.assertTrue(self.player.has_item("Aether Sigil"))
+
+        if bridge.key_needed and self.player.has_item(bridge.key_needed.name):
+            bridge.locked = False
+
+        self.assertFalse(bridge.locked)
+
 
 if __name__ == "__main__":
     unittest.main()

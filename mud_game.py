@@ -44,7 +44,7 @@ class GameController:
     def __init__(self):
         self.world = build_default_world()
         self.quests = get_default_quests()
-        self.player = None
+        self.player: Player = None  # type: ignore
         self.party: list[Companion] = []
 
         # Initial recruitable companions at the Golden Oak Tavern
@@ -677,12 +677,13 @@ class GameController:
                 f"\n📜 [bold yellow]Quest Accepted: {quest.name}[/bold yellow] - {quest.description}"
             )
 
-            # Immediately check inventory if player already holds required fetch item
             if quest.objective_type == "fetch":
-                item_count = sum(
-                    1
-                    for item in self.player.inventory
-                    if item.name.lower() == quest.objective_target.lower()
+                item_count = len(
+                    [
+                        item
+                        for item in self.player.inventory
+                        if item.name.lower() == quest.objective_target.lower()
+                    ]
                 )
                 quest.count_current = min(quest.count_needed, item_count)
 
