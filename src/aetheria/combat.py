@@ -214,7 +214,7 @@ class CombatManager:
 
     def _process_enemy_turn(self):
         # Choose a target (Player gets targeted 60% of the time, companions 40%)
-        target = self.player
+        target: Any = self.player
         if self.party and random.random() < 0.40:
             target = random.choice([c for c in self.party if c.is_alive])
 
