@@ -4,7 +4,7 @@ from rich.table import Table
 from rich.columns import Columns
 from rich.text import Text
 from rich.box import ROUNDED, DOUBLE
-from typing import List
+from typing import List, Optional
 from aetheria.entity import Player, Companion, Enemy
 from aetheria.world import Room
 from aetheria.quests import Quest
@@ -73,13 +73,19 @@ def render_help_menu():
     console.print(table)
 
 
-def render_room_panel(room: Room, party: List[Companion], player: Player):
+def render_room_panel(
+    room: Room,
+    party: List[Companion],
+    player: Player,
+    dynamic_description: Optional[str] = None,
+):
     """Renders a beautiful visual layout of the player's current location."""
     header_style = "bold bright_green" if room.is_town else "bold deep_pink4"
     box_header = f"✨ {room.name}" if room.is_town else f"🌋 {room.name} (Hostile Area)"
 
     room_details = []
-    room_details.append(f"[italic]{room.description}[/italic]\n")
+    desc = dynamic_description if dynamic_description else room.description
+    room_details.append(f"[italic]{desc}[/italic]\n")
 
     # Display items
     if room.items:
