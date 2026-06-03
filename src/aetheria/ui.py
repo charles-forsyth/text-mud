@@ -372,3 +372,45 @@ def render_quests_log(quests: List[Quest]):
         )
 
     console.print(table)
+
+
+def render_quick_actions(actions: List[tuple]):
+    """Renders a beautiful grid or table of numbered quick actions in columns."""
+    table = Table(
+        box=ROUNDED,
+        border_style="yellow",
+        show_header=False,
+        expand=True,
+    )
+
+    # We can split actions into 2 columns to save vertical space
+    num_cols = 2
+    for _ in range(num_cols):
+        table.add_column("Number", style="bold yellow", justify="right", width=4)
+        table.add_column("Action", style="white", justify="left")
+
+    # Chunk actions into rows
+    rows = []
+    current_row = []
+    for idx, (display_text, _) in enumerate(actions, 1):
+        current_row.extend([f"[bold yellow]{idx}[/bold yellow]", display_text])
+        if len(current_row) == num_cols * 2:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        # Pad with empty cells
+        while len(current_row) < num_cols * 2:
+            current_row.extend(["", ""])
+        rows.append(current_row)
+
+    for row in rows:
+        table.add_row(*row)
+
+    console.print(
+        Panel(
+            table,
+            title="⚡ [bold yellow]Quick Actions[/bold yellow] (Type number or type command)",
+            border_style="yellow",
+            box=ROUNDED,
+        )
+    )

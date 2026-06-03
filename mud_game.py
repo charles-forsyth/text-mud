@@ -1,6 +1,7 @@
 import sys
 import os
 import random
+from typing import Any
 
 # Add 'src' directory to sys.path to enable package imports cleanly
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
@@ -26,6 +27,7 @@ from aetheria.ui import (
     render_full_party_hud,
     render_inventory_list,
     render_quests_log,
+    render_quick_actions,
 )
 
 
@@ -75,6 +77,73 @@ class GameController:
             ),
         ]
         self.is_running = True
+        self.quick_actions: list[tuple[str, str]] = []
+
+    def get_current_quick_actions(self) -> list[tuple[str, str]]:
+        actions: list[tuple[str, str]] = []
+        room = self.player.current_room
+
+        # 1. Exits / Movement
+        for direction in room.exits.keys():
+            dest = room.get_exit(direction)
+            dest_name = dest.name if dest else "Unknown"
+            actions.append(
+                (
+                    f"🚪 Go [bold green]{direction.capitalize()}[/bold green] [dim]({dest_name})[/dim]",
+                    f"go {direction}",
+                )
+            )
+
+        # 2. Items / Loot
+        for item in room.items:
+            actions.append(
+                (
+                    f"📦 Pick up [bold yellow]{item.name}[/bold yellow]",
+                    f"take {item.name}",
+                )
+            )
+
+        # 3. Talk to NPCs
+        for npc in room.npcs:
+            actions.append(
+                (
+                    f"👤 Talk to [bold cyan]{npc.name}[/bold cyan] [dim](Hello)[/dim]",
+                    f"talk {npc.name} hello",
+                )
+            )
+            # If they are quest givers, let's offer a Quest conversation shortcut
+            if npc.name in [
+                "Tavernkeeper Barnaby",
+                "Priestess Althea",
+                "Quartermaster Elena",
+            ]:
+                actions.append(
+                    (
+                        f"📜 Talk to [bold cyan]{npc.name}[/bold cyan] [dim](Quest)[/dim]",
+                        f"talk {npc.name} quest",
+                    )
+                )
+
+        # 4. Recruit Companions in Tavern
+        if room.name == "Eldergrove Tavern (The Golden Oak)":
+            for comp in self.tavern_companions:
+                actions.append(
+                    (
+                        f"🍻 Recruit [bold cyan]{comp.name}[/bold cyan] [dim]({comp.char_class})[/dim]",
+                        f"recruit {comp.name}",
+                    )
+                )
+
+        # 5. General Menu Actions
+        actions.append(("🎒 Use/Consume Item", "use"))
+        actions.append(("🛡️ Equip Armaments", "equip"))
+        actions.append(("🎒 View Inventory", "inventory"))
+        actions.append(("👥 View Party HUD", "party"))
+        actions.append(("📜 View Quest Log", "quests"))
+        actions.append(("💾 Save Progress", "save"))
+        actions.append(("❓ Help Menu", "help"))
+
+        return actions
 
     def run(self):
         render_title_screen()
@@ -100,6 +169,8 @@ class GameController:
                 continue
 
             try:
+                self.quick_actions = self.get_current_quick_actions()
+                render_quick_actions(self.quick_actions)
                 command = console.input("\n[bold green]>[/bold green] ")
                 self.process_command(command)
             except (KeyboardInterrupt, EOFError):
@@ -200,6 +271,18 @@ class GameController:
         verb = parts[0]
         noun = " ".join(parts[1:]) if len(parts) > 1 else ""
 
+        # Check if verb is a quick action number selection
+        if verb.isdigit():
+            idx = int(verb) - 1
+            if hasattr(self, "quick_actions") and 0 <= idx < len(self.quick_actions):
+                _, actual_command = self.quick_actions[idx]
+                console.print(f"[dim]⚡ Executing: {actual_command}[/dim]")
+                self.process_command(actual_command)
+                return
+            else:
+                console.print("[red]Invalid quick action number.[/red]")
+                return
+
         if verb in ["quit", "exit"]:
             self.is_running = False
             console.print("[bold red]Goodbye![/bold red]")
@@ -219,19 +302,19 @@ class GameController:
             )
             self.move_player(direction)
 
-        elif verb in ["take", "t"] and noun:
+        elif verb in ["take", "t"]:
             self.take_item(noun)
 
-        elif verb in ["use", "u"] and noun:
+        elif verb in ["use", "u"]:
             self.use_item(noun)
 
-        elif verb in ["equip", "eq"] and noun:
+        elif verb in ["equip", "eq"]:
             self.equip_item(noun)
 
-        elif verb in ["talk"] and noun:
+        elif verb in ["talk", "tk"]:
             self.talk_to_npc(noun)
 
-        elif verb in ["recruit", "rec"] and noun:
+        elif verb in ["recruit", "rec"]:
             self.recruit_companion(noun)
 
         elif verb in ["party", "p"]:
@@ -313,15 +396,51 @@ class GameController:
 
     def take_item(self, item_name: str):
         room = self.player.current_room
-        target_item = None
-        for item in room.items:
-            if item.name.lower() == item_name.lower():
-                target_item = item
-                break
-
-        if not target_item:
-            console.print("[red]Item not found in this room.[/red]")
+        target_item: Any = None
+        if not room.items:
+            console.print("[red]There is nothing here to take.[/red]")
             return
+
+        if not item_name:
+            if len(room.items) == 1:
+                target_item = room.items[0]
+            else:
+                console.print("\n[bold yellow]Items on the floor:[/bold yellow]")
+                for idx, item in enumerate(room.items, 1):
+                    console.print(
+                        f"  {idx}. [bold yellow]{item.name}[/bold yellow] - {item.description}"
+                    )
+                choice = console.input(
+                    "\nSelect item to pick up (Number or Name): "
+                ).strip()
+                if not choice:
+                    return
+                try:
+                    i_idx = int(choice) - 1
+                    if 0 <= i_idx < len(room.items):
+                        target_item = room.items[i_idx]
+                    else:
+                        console.print("[red]Invalid selection.[/red]")
+                        return
+                except ValueError:
+                    # Match by name
+                    for item in room.items:
+                        if item.name.lower() == choice.lower():
+                            target_item = item
+                            break
+                    else:
+                        console.print("[red]Item not found.[/red]")
+                        return
+        else:
+            target_item = None
+            for item in room.items:
+                if item.name.lower() == item_name.lower():
+                    target_item = item
+                    break
+
+            if not target_item:
+                console.print("[red]Item not found in this room.[/red]")
+                return
 
         room.items.remove(target_item)
         self.player.inventory.append(target_item)
@@ -333,15 +452,48 @@ class GameController:
         self.update_quest_progress("fetch", target_item.name)
 
     def use_item(self, item_name: str):
-        target_item = None
-        for item in self.player.inventory:
-            if item.name.lower() == item_name.lower():
-                target_item = item
-                break
-
-        if not target_item:
-            console.print("[red]You don't have that item in your inventory.[/red]")
-            return
+        target_item: Any = None
+        if not item_name:
+            consumables = [
+                item for item in self.player.inventory if isinstance(item, Consumable)
+            ]
+            if not consumables:
+                console.print("[red]No usable items in your inventory.[/red]")
+                return
+            console.print("\n[bold yellow]Available Usable Items:[/bold yellow]")
+            for idx, c in enumerate(consumables, 1):
+                console.print(
+                    f"  {idx}. [bold yellow]{c.name}[/bold yellow] - {c.description}"
+                )
+            choice = console.input("\nSelect item to use (Number or Name): ").strip()
+            if not choice:
+                return
+            try:
+                c_idx = int(choice) - 1
+                if 0 <= c_idx < len(consumables):
+                    target_item = consumables[c_idx]
+                else:
+                    console.print("[red]Invalid selection.[/red]")
+                    return
+            except ValueError:
+                # Match by name
+                for c in consumables:
+                    if c.name.lower() == choice.lower():
+                        target_item = c
+                        break
+                else:
+                    console.print("[red]Item not found.[/red]")
+                    return
+        else:
+            # find by name
+            target_item = None
+            for item in self.player.inventory:
+                if item.name.lower() == item_name.lower():
+                    target_item = item
+                    break
+            if not target_item:
+                console.print("[red]You don't have that item in your inventory.[/red]")
+                return
 
         if isinstance(target_item, Consumable):
             summary = target_item.use(self.player)
@@ -351,15 +503,47 @@ class GameController:
             console.print("[red]That item cannot be consumed.[/red]")
 
     def equip_item(self, item_name: str):
-        target_item = None
-        for item in self.player.inventory:
-            if item.name.lower() == item_name.lower():
-                target_item = item
-                break
-
-        if not target_item:
-            console.print("[red]You don't have that item in your inventory.[/red]")
-            return
+        target_item: Any = None
+        if not item_name:
+            equipment_list = [
+                item for item in self.player.inventory if isinstance(item, Equipment)
+            ]
+            if not equipment_list:
+                console.print("[red]No equipable gear in your inventory.[/red]")
+                return
+            console.print("\n[bold yellow]Available Equipable Gear:[/bold yellow]")
+            for idx, eq in enumerate(equipment_list, 1):
+                console.print(
+                    f"  {idx}. [bold cyan]{eq.name}[/bold cyan] [dim]({eq.slot.name})[/dim] - {eq.description}"
+                )
+            choice = console.input("\nSelect gear to equip (Number or Name): ").strip()
+            if not choice:
+                return
+            try:
+                eq_idx = int(choice) - 1
+                if 0 <= eq_idx < len(equipment_list):
+                    target_item = equipment_list[eq_idx]
+                else:
+                    console.print("[red]Invalid selection.[/red]")
+                    return
+            except ValueError:
+                # Match by name
+                for eq in equipment_list:
+                    if eq.name.lower() == choice.lower():
+                        target_item = eq
+                        break
+                else:
+                    console.print("[red]Item not found.[/red]")
+                    return
+        else:
+            target_item = None
+            for item in self.player.inventory:
+                if item.name.lower() == item_name.lower():
+                    target_item = item
+                    break
+            if not target_item:
+                console.print("[red]You don't have that item in your inventory.[/red]")
+                return
 
         if isinstance(target_item, Equipment):
             old_eq = self.player.equip(target_item)
@@ -375,30 +559,72 @@ class GameController:
 
     def talk_to_npc(self, target_arg: str):
         """AI Enabled dialogue extraction with Gemini Pro."""
-        # We expect syntax: talk to [npc] about [topic] or talk [npc] [topic]
-        # Clean target string
-        clean_arg = target_arg.replace("to ", "")
-        parts = clean_arg.split("about")
-
-        npc_sub = parts[0].strip()
-        topic_sub = parts[1].strip() if len(parts) > 1 else "hello"
-
-        # Search for NPC in current room
+        npc: Any = None
+        topic_sub: Any = None
         room = self.player.current_room
-        npc = None
-        for n in room.npcs:
-            if (
-                n.name.lower().startswith(npc_sub.lower())
-                or npc_sub.lower() in n.name.lower()
-            ):
-                npc = n
-                break
-
-        if not npc:
-            console.print(
-                "[red]Who are you trying to speak to? No such character is present here.[/red]"
-            )
+        if not room.npcs:
+            console.print("[red]There is no one here to talk to.[/red]")
             return
+
+        # If target_arg is empty, select the npc
+        if not target_arg:
+            if len(room.npcs) == 1:
+                npc = room.npcs[0]
+                topic_sub = "hello"
+            else:
+                console.print("\n[bold yellow]People present:[/bold yellow]")
+                for idx, n in enumerate(room.npcs, 1):
+                    console.print(f"  {idx}. [bold cyan]{n.name}[/bold cyan]")
+                choice = console.input(
+                    "\nSelect person to talk to (Number or Name): "
+                ).strip()
+                if not choice:
+                    return
+                try:
+                    n_idx = int(choice) - 1
+                    if 0 <= n_idx < len(room.npcs):
+                        npc = room.npcs[n_idx]
+                        topic_sub = "hello"
+                    else:
+                        console.print("[red]Invalid selection.[/red]")
+                        return
+                except ValueError:
+                    # Match by name
+                    for n in room.npcs:
+                        if (
+                            n.name.lower().startswith(choice.lower())
+                            or choice.lower() in n.name.lower()
+                        ):
+                            npc = n
+                            topic_sub = "hello"
+                            break
+                    else:
+                        console.print("[red]No such person here.[/red]")
+                        return
+        else:
+            # We expect syntax: talk to [npc] about [topic] or talk [npc] [topic]
+            # Clean target string
+            clean_arg = target_arg.replace("to ", "")
+            parts = clean_arg.split("about")
+
+            npc_sub = parts[0].strip()
+            topic_sub = parts[1].strip() if len(parts) > 1 else "hello"
+
+            # Search for NPC in current room
+            npc = None
+            for n in room.npcs:
+                if (
+                    n.name.lower().startswith(npc_sub.lower())
+                    or npc_sub.lower() in n.name.lower()
+                ):
+                    npc = n
+                    break
+
+            if not npc:
+                console.print(
+                    "[red]Who are you trying to speak to? No such character is present here.[/red]"
+                )
+                return
 
         # Fetch active quest information for contextual dialogue
         quest_context = "No major events."
@@ -439,6 +665,7 @@ class GameController:
         self.check_quest_hand_in(npc.name)
 
     def recruit_companion(self, name_arg: str):
+        companion: Any = None
         room = self.player.current_room
         if room.name != "Eldergrove Tavern (The Golden Oak)":
             console.print(
@@ -452,17 +679,50 @@ class GameController:
             )
             return
 
-        companion = None
-        for comp in self.tavern_companions:
-            if comp.name.lower() == name_arg.lower():
-                companion = comp
-                break
-
-        if not companion:
-            console.print(
-                f"[red]No companion named '{name_arg}' is currently here waiting to be hired.[/red]"
-            )
+        if not self.tavern_companions:
+            console.print("[red]No recruitable companions remain here.[/red]")
             return
+
+        if not name_arg:
+            console.print(
+                "\n[bold yellow]Recruitable Companions present:[/bold yellow]"
+            )
+            for idx, comp in enumerate(self.tavern_companions, 1):
+                console.print(
+                    f"  {idx}. [bold cyan]{comp.name}[/bold cyan] ({comp.char_class}) - {comp.personality}"
+                )
+            choice = console.input(
+                "\nSelect companion to recruit (Number or Name): "
+            ).strip()
+            if not choice:
+                return
+            try:
+                c_idx = int(choice) - 1
+                if 0 <= c_idx < len(self.tavern_companions):
+                    companion = self.tavern_companions[c_idx]
+                else:
+                    console.print("[red]Invalid selection.[/red]")
+                    return
+            except ValueError:
+                # Match by name
+                for comp in self.tavern_companions:
+                    if comp.name.lower() == choice.lower():
+                        companion = comp
+                        break
+                else:
+                    console.print("[red]No such companion present here.[/red]")
+                    return
+        else:
+            companion = None
+            for comp in self.tavern_companions:
+                if comp.name.lower() == name_arg.lower():
+                    companion = comp
+                    break
+
+            if not companion:
+                print_msg = f"[red]No companion named '{name_arg}' is currently here waiting to be hired.[/red]"
+                console.print(print_msg)
+                return
 
         # Remove from Tavern pool, add to active Party
         self.tavern_companions.remove(companion)
