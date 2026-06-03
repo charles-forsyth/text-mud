@@ -1,7 +1,18 @@
 [project]
 name = "text-mud"
-version = "0.1.0"
+version = "0.2.0"
 description = "A text-based MUD game"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "google-generativeai>=0.8.0",
+    "rich>=13.7.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.1.0",
+]
