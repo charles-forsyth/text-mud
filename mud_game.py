@@ -117,20 +117,41 @@ class GameController:
                 )
             )
             # If they are quest givers, let's offer a Quest conversation shortcut
-            if npc.name in [
-                "Tavernkeeper Barnaby",
-                "Priestess Althea",
-                "Quartermaster Elena",
-            ]:
-                actions.append(
-                    (
-                        f"📜 Talk to [bold cyan]{npc.name}[/bold cyan] [dim](Quest)[/dim]",
-                        f"talk {npc.name} quest",
-                    )
-                )
+            npc_quest_map = {
+                "Tavernkeeper Barnaby": "q_eldergrove_goblins",
+                "Priestess Althea": "q_eldergrove_sigil",
+                "Quartermaster Elena": "q_silverlight_malakor",
+            }
+            if npc.name in npc_quest_map:
+                qid = npc_quest_map[npc.name]
+                if qid in self.quests:
+                    quest = self.quests[qid]
+                    show_quest_shortcut = False
+                    if (
+                        quest.status == "inactive"
+                        and qid not in self.player.completed_quests
+                    ):
+                        if npc.name == "Priestess Althea":
+                            if "q_eldergrove_goblins" in self.player.completed_quests:
+                                show_quest_shortcut = True
+                        else:
+                            show_quest_shortcut = True
+                    elif quest.status == "active" and quest.is_objective_met:
+                        show_quest_shortcut = True
+
+                    if show_quest_shortcut:
+                        actions.append(
+                            (
+                                f"📜 Talk to [bold cyan]{npc.name}[/bold cyan] [dim](Quest)[/dim]",
+                                f"talk {npc.name} quest",
+                            )
+                        )
 
         # 4. Recruit Companions in Tavern
-        if room.name == "Eldergrove Tavern (The Golden Oak)":
+        if (
+            room.name == "Eldergrove Tavern (The Golden Oak)"
+            and len(self.party) < MAX_PARTY_SIZE - 1
+        ):
             for comp in self.tavern_companions:
                 actions.append(
                     (
@@ -140,8 +161,10 @@ class GameController:
                 )
 
         # 5. General Menu Actions
-        actions.append(("🎒 Use/Consume Item", "use"))
-        actions.append(("🛡️ Equip Armaments", "equip"))
+        if any(isinstance(i, Consumable) for i in self.player.inventory):
+            actions.append(("🎒 Use/Consume Item", "use"))
+        if any(isinstance(i, Equipment) for i in self.player.inventory):
+            actions.append(("🛡️ Equip Armaments", "equip"))
         actions.append(("🎒 View Inventory", "inventory"))
         actions.append(("👥 View Party HUD", "party"))
         actions.append(("📜 View Quest Log", "quests"))
