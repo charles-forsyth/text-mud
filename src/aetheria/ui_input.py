@@ -3,7 +3,7 @@ import sys
 from rich.panel import Panel
 from rich.text import Text
 from rich.box import ROUNDED
-from typing import List, Optional
+from typing import List, Optional, Callable, Any
 
 try:
     import tty
@@ -84,20 +84,32 @@ def read_single_character() -> Optional[str]:
     return ch
 
 
-def interactive_prompt(valid_exits: List[str], prompt_text: str = "> ") -> str:
+def interactive_prompt(
+    valid_exits: List[str],
+    prompt_text: str = "> ",
+    on_change: Optional[Callable[[str], None]] = None,
+) -> str:
     """
     Interactive, character-by-character non-blocking text reader.
     Updates the autocomplete HUD dynamically above the input row.
     """
+
     if not HAS_TERMIOS or not sys.stdin.isatty():
         # Fallback to standard input if not a real interactive TTY
-        sys.stdout.write(prompt_text)
-        sys.stdout.flush()
+        if on_change:
+            on_change("")
+        else:
+            sys.stdout.write(prompt_text)
+            sys.stdout.flush()
         return sys.stdin.readline().strip()
 
     current_buffer: List[str] = []
-    sys.stdout.write(prompt_text)
-    sys.stdout.flush()
+
+    if on_change:
+        on_change("")
+    else:
+        sys.stdout.write(prompt_text)
+        sys.stdout.flush()
 
     while True:
         char = read_single_character()
@@ -113,9 +125,12 @@ def interactive_prompt(valid_exits: List[str], prompt_text: str = "> ") -> str:
         elif char in ("\x7f", "\x08"):
             if current_buffer:
                 current_buffer.pop()
-                # Erase last character visually
-                sys.stdout.write("\b \b")
-                sys.stdout.flush()
+                if on_change:
+                    on_change("".join(current_buffer))
+                else:
+                    # Erase last character visually
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
         # Escape sequences (Arrow keys, functional inputs etc.)
         elif char == "\x1b":
             # Consume escape sequence characters
@@ -125,7 +140,103 @@ def interactive_prompt(valid_exits: List[str], prompt_text: str = "> ") -> str:
         # Standard printable characters
         elif ord(char) >= 32:
             current_buffer.append(char)
-            sys.stdout.write(char)
-            sys.stdout.flush()
+            if on_change:
+                on_change("".join(current_buffer))
+            else:
+                sys.stdout.write(char)
+                sys.stdout.flush()
 
     return "".join(current_buffer)
+
+
+def get_combat_suggestions_panel(current_input: str, player: Any, enemy: Any) -> Panel:
+    """
+    Generates an autocomplete and combat command helper panel matching current input.
+    Guides the player on spell casting and item usage live!
+    """
+
+    cleaned = current_input.strip().lower()
+    suggestion_text = Text()
+
+    if not cleaned:
+        suggestion_text.append(
+            "⚔️ Actions: 1. [bold green]Attack[/bold green] | 2. [bold cyan]Spell[/bold cyan] | 3. [bold yellow]Item[/bold yellow] | 4. [bold magenta]Defend[/bold yellow] | 5. [bold red]Flee[/bold red]",
+            style="white",
+        )
+        suggestion_text.append(
+            "\n💡 Shorthand: '1' or 'atk', '2' or 'spell', '3' or 'item', '4' or 'def', '5' or 'flee'",
+            style="dim yellow",
+        )
+    elif (
+        cleaned == "2"
+        or cleaned == "spell"
+        or cleaned.startswith("spell ")
+        or cleaned.startswith("cast ")
+        or cleaned.startswith("cast")
+    ):
+        # List player spells
+        spells_str = ", ".join(
+            f"[bold cyan]{s.name}[/bold cyan] ({s.mana_cost} MP)" for s in player.spells
+        )
+        suggestion_text.append("🪄 Available Spells:\n", style="white")
+        suggestion_text.append(
+            spells_str if spells_str else "[dim red]No spells available[/dim red]"
+        )
+        suggestion_text.append(
+            "\n💡 Usage: 'spell <name>' or cast by choosing option 2 and typing the name/number.",
+            style="dim yellow",
+        )
+    elif (
+        cleaned == "3"
+        or cleaned == "item"
+        or cleaned.startswith("item ")
+        or cleaned.startswith("use ")
+        or cleaned.startswith("use")
+    ):
+        # List player consumables
+        from aetheria.models import Consumable
+
+        consumables = [
+            item for item in player.inventory if isinstance(item, Consumable)
+        ]
+        items_str = ", ".join(
+            f"[bold yellow]{c.name}[/bold yellow]" for c in consumables
+        )
+        suggestion_text.append("🧪 Backpack Consumables:\n", style="white")
+        suggestion_text.append(
+            items_str
+            if items_str
+            else "[dim red]No healing consumables available[/dim red]"
+        )
+        suggestion_text.append(
+            "\n💡 Usage: 'item <name>' or 'use <name>' to consume a potion.",
+            style="dim yellow",
+        )
+    elif cleaned == "1" or cleaned == "attack" or cleaned == "atk":
+        suggestion_text.append(
+            f"⚔️ Strike: basic weapon swing at [bold red]{enemy.name}[/bold red]!",
+            style="green",
+        )
+    elif cleaned == "4" or cleaned == "defend" or cleaned == "def":
+        suggestion_text.append(
+            "🛡️ Guard: Prepare to block attacks, reducing damage taken by 50%!",
+            style="magenta",
+        )
+    elif cleaned == "5" or cleaned == "flee":
+        suggestion_text.append(
+            "🏃 Escape: Attempt to flee the battlefield! Success rate is 60%.",
+            style="red",
+        )
+    else:
+        suggestion_text.append(
+            f"🔍 Custom Command: '{cleaned}' (Hit enter to submit combat choice)",
+            style="dim italic green",
+        )
+
+    return Panel(
+        suggestion_text,
+        title="[bold red]💡 Combat Strategy Guide[/bold red]",
+        border_style="red",
+        box=ROUNDED,
+        padding=(0, 1),
+    )

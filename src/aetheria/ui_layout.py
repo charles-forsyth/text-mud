@@ -97,3 +97,51 @@ def generate_main_dashboard_layout(
         layout["footer"]["quick_actions"].update(quick_actions_panel)
 
     return layout
+
+
+def generate_combat_dashboard_layout(
+    party_panel: Panel,
+    enemy_panel: Panel,
+    log_panel: Panel,
+    combat_actions_panel: Any,
+    header_title: str = "⚔️ Aetheria Tactical Combat ⚔️",
+) -> Layout:
+    """
+    Assembles a beautiful, non-scrolling combat dashboard.
+    Maintains symmetric height splits to guarantee a perfect 24-line terminal layout.
+    """
+    layout = Layout()
+    layout.split_column(
+        Layout(name="header", size=3),
+        Layout(name="body", ratio=14),
+        Layout(name="footer", size=7),
+    )
+
+    # Populate Header Content
+    layout["header"].update(
+        Panel(
+            Text(header_title, style="bold red", justify="center"),
+            border_style="red",
+            box=DOUBLE,
+        )
+    )
+
+    # Split Body into Left (Party status & HP) and Right (Enemy stats & status)
+    layout["body"].split_row(
+        Layout(name="party_status", ratio=50),
+        Layout(name="enemy_status", ratio=50),
+    )
+
+    # Split Footer into Left (Combat round log) and Right (Interactive Action Panel)
+    layout["footer"].split_row(
+        Layout(name="combat_log", ratio=55),
+        Layout(name="combat_actions", ratio=45),
+    )
+
+    # Assign renderables
+    layout["body"]["party_status"].update(party_panel)
+    layout["body"]["enemy_status"].update(enemy_panel)
+    layout["footer"]["combat_log"].update(log_panel)
+    layout["footer"]["combat_actions"].update(combat_actions_panel)
+
+    return layout

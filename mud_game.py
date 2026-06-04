@@ -33,14 +33,12 @@ from aetheria.ui import (
     render_full_party_hud,
     render_inventory_list,
     render_quests_log,
-    render_quick_actions,
     render_world_map,
     TerminalScreen,
     clear_and_home_screen,
     show_terminal_cursor,
     render_action_log,
     interactive_prompt,
-    get_input_suggestions_panel,
 )
 
 
@@ -247,7 +245,7 @@ class GameController:
 
         return actions
 
-    def render_current_room(self, quick_actions=None):
+    def render_current_room(self, quick_actions=None, current_input=""):
         """Generates dynamic descriptive context and renders the beautiful room panel."""
         if self.is_capturing:
             return
@@ -306,6 +304,7 @@ class GameController:
             world_clock=self.world_clock,
             message_log=self.message_log,
             quick_actions=quick_actions,
+            current_input=current_input,
         )
         render_action_log(self.message_log)
 
@@ -422,24 +421,23 @@ class GameController:
                 try:
                     clear_and_home_screen()
                     self.quick_actions = self.get_current_quick_actions()
-                    self.render_current_room(quick_actions=self.quick_actions)
 
-                    if self.quick_actions is None:
-                        render_quick_actions(self.quick_actions)
-                        suggestions_panel = get_input_suggestions_panel(
-                            "", list(self.player.current_room.exits.keys())
+                    prompt_style = "\x1b[32m\x1b[1m> \x1b[0m"
+
+                    def redraw_overworld(buffer_text: str):
+                        clear_and_home_screen()
+                        self.quick_actions = self.get_current_quick_actions()
+                        self.render_current_room(
+                            quick_actions=self.quick_actions, current_input=buffer_text
                         )
-                        console.print(suggestions_panel)
+                        sys.stdout.write(prompt_style + buffer_text)
+                        sys.stdout.flush()
 
                     show_terminal_cursor(True)
-                    prompt_style = (
-                        "[bold green]> [/bold green]"
-                        if self.quick_actions is not None
-                        else "\n[bold green]> [/bold green]"
-                    )
                     command = interactive_prompt(
                         valid_exits=list(self.player.current_room.exits.keys()),
                         prompt_text=prompt_style,
+                        on_change=redraw_overworld,
                     )
                     show_terminal_cursor(False)
 
@@ -1341,16 +1339,30 @@ class GameController:
         ]
 
         while combat.is_active:
-            clear_and_home_screen()
-            render_combat_screen(self.player, self.party, enemy, round_log)
+            # 1. Ask for player action with live autocompletion
+            prompt_str = "\x1b[33m\x1b[1mChoose combat action (1-5 or Name): \x1b[0m"
 
-            # 1. Ask for player action
-            console.print(
-                "\n[bold yellow]Actions:[/bold yellow] [bold white]1. Attack | 2. Spell | 3. Item | 4. Defend | 5. Flee[/bold white]"
-            )
+            def redraw_combat(buffer_text: str):
+                clear_and_home_screen()
+                render_combat_screen(
+                    self.player,
+                    self.party,
+                    enemy,
+                    round_log,
+                    current_input=buffer_text,
+                )
+                sys.stdout.write(prompt_str + buffer_text)
+                sys.stdout.flush()
+
             show_terminal_cursor(True)
             choice = (
-                console.input("Choose combat action (1-5 or Name): ").strip().lower()
+                interactive_prompt(
+                    valid_exits=[],
+                    prompt_text=prompt_str,
+                    on_change=redraw_combat,
+                )
+                .strip()
+                .lower()
             )
             show_terminal_cursor(False)
 
@@ -1361,25 +1373,40 @@ class GameController:
             if choice in ["2", "spell"]:
                 # Cast Spells list
                 if not self.player.spells:
-                    console.print(
-                        "[red]You have no active abilities/spells to cast![/red]"
+                    round_log.append(
+                        "[bold red]You have no active abilities/spells to cast![/bold red]"
                     )
                     continue
 
-                console.print("\nAvailable Spells:")
-                for idx, s in enumerate(self.player.spells, 1):
-                    console.print(f"{idx}. {s}")
+                prompt_spell = "\x1b[36m\x1b[1mSelect Spell (Number or Name): \x1b[0m"
+
+                def redraw_spell_selection(buffer_text: str):
+                    clear_and_home_screen()
+                    render_combat_screen(
+                        self.player,
+                        self.party,
+                        enemy,
+                        round_log,
+                        current_input="spell " + buffer_text,
+                    )
+                    sys.stdout.write(prompt_spell + buffer_text)
+                    sys.stdout.flush()
 
                 show_terminal_cursor(True)
-                s_choice = console.input("Select Spell (Number or Name): ").strip()
+                s_choice = interactive_prompt(
+                    valid_exits=[],
+                    prompt_text=prompt_spell,
+                    on_change=redraw_spell_selection,
+                ).strip()
                 show_terminal_cursor(False)
+
                 try:
                     s_idx = int(s_choice) - 1
                     if 0 <= s_idx < len(self.player.spells):
                         spell = self.player.spells[s_idx]
                         action = "spell"
                     else:
-                        console.print("[red]Invalid index choice.[/red]")
+                        round_log.append("[bold red]Invalid index choice.[/bold red]")
                         continue
                 except ValueError:
                     # Match by spell name
@@ -1389,7 +1416,7 @@ class GameController:
                             action = "spell"
                             break
                     if not spell:
-                        console.print("[red]Spell not recognized.[/red]")
+                        round_log.append("[bold red]Spell not recognized.[/bold red]")
                         continue
 
             elif choice in ["3", "item"]:
@@ -1399,17 +1426,33 @@ class GameController:
                     if isinstance(item, Consumable)
                 ]
                 if not consumables:
-                    console.print(
-                        "[red]No healing potions or elixirs in your backpack.[/red]"
+                    round_log.append(
+                        "[bold red]No healing potions or elixirs in your backpack.[/bold red]"
                     )
                     continue
 
-                console.print("\nConsumables:")
-                for idx, c in enumerate(consumables, 1):
-                    console.print(f"{idx}. {c.name} - {c.description}")
+                prompt_item = (
+                    "\x1b[35m\x1b[1mSelect Consumable (Number or Name): \x1b[0m"
+                )
+
+                def redraw_item_selection(buffer_text: str):
+                    clear_and_home_screen()
+                    render_combat_screen(
+                        self.player,
+                        self.party,
+                        enemy,
+                        round_log,
+                        current_input="item " + buffer_text,
+                    )
+                    sys.stdout.write(prompt_item + buffer_text)
+                    sys.stdout.flush()
 
                 show_terminal_cursor(True)
-                c_choice = console.input("Select Consumable (Number or Name): ").strip()
+                c_choice = interactive_prompt(
+                    valid_exits=[],
+                    prompt_text=prompt_item,
+                    on_change=redraw_item_selection,
+                ).strip()
                 show_terminal_cursor(False)
 
                 try:
@@ -1418,7 +1461,7 @@ class GameController:
                         consumable = consumables[c_idx]
                         action = "item"
                     else:
-                        console.print("[red]Invalid index choice.[/red]")
+                        round_log.append("[bold red]Invalid index choice.[/bold red]")
                         continue
                 except ValueError:
                     for c in consumables:
@@ -1427,7 +1470,7 @@ class GameController:
                             action = "item"
                             break
                     if not consumable:
-                        console.print("[red]Item not recognized.[/red]")
+                        round_log.append("[bold red]Item not recognized.[/bold red]")
                         continue
 
             elif choice in ["4", "defend"]:

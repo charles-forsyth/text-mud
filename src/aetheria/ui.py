@@ -4,7 +4,6 @@ from rich.table import Table
 from rich.columns import Columns
 from rich.text import Text
 from rich.box import ROUNDED, DOUBLE
-from rich.layout import Layout
 from typing import Any, List, Optional
 from aetheria.entity import Player, Companion, Enemy
 from aetheria.world import Room
@@ -12,12 +11,16 @@ from aetheria.quests import Quest
 
 # Import premium UI/UX modular system
 from aetheria.ui_meters import render_stat_progress_bar
-from aetheria.ui_layout import generate_main_dashboard_layout
+from aetheria.ui_layout import (
+    generate_main_dashboard_layout,
+    generate_combat_dashboard_layout,
+)
 from aetheria.ui_log import parse_string_to_log_event, ScrollingActivityLog
 from aetheria.ui_effects import render_dynamic_impact_panel
 from aetheria.ui_input import (
     interactive_prompt as interactive_prompt,
     get_input_suggestions_panel as get_input_suggestions_panel,
+    get_combat_suggestions_panel as get_combat_suggestions_panel,
 )
 
 import sys
@@ -131,106 +134,35 @@ def render_help_menu():
 
 
 def get_minimap_panel(room: Room) -> Panel:
-    """Renders a beautiful ASCII exit compass map of the current room."""
+    """Renders a beautiful and compact ASCII exit compass map of the current room."""
     north = room.get_exit("north")
     south = room.get_exit("south")
     east = room.get_exit("east")
     west = room.get_exit("west")
 
-    def clean_name(r) -> str:
-        if not r:
-            return "Blocked"
-        name = r.name
-        name = name.replace("Eldergrove ", "")
-        name = name.replace("Silverlight ", "")
-        name = name.replace("Shadowspire ", "")
-        if "Tavern" in name:
-            name = "Tavern"
-        if len(name) > 13:
-            return name[:10] + "..."
-        return name
+    n_style = "[bold green]N[/bold green]" if north else "[dim grey37]░[/dim grey37]"
+    s_style = "[bold green]S[/bold green]" if south else "[dim grey37]░[/dim grey37]"
+    e_style = "[bold green]E[/bold green]" if east else "[dim grey37]░[/dim grey37]"
+    w_style = "[bold green]W[/bold green]" if west else "[dim grey37]░[/dim grey37]"
 
-    # Create the internal grid
-    table = Table.grid(expand=True)
-    table.add_column(justify="center", ratio=1)
-    table.add_column(justify="center", ratio=1)
-    table.add_column(justify="center", ratio=1)
-
-    # Row 1: North Panel
-    n_content = (
-        f"[bold green]▲ NORTH[/bold green]\n[cyan]{clean_name(north)}[/cyan]"
-        if north
-        else "[dim]▲\n[grey37]Blocked[/grey37][/dim]"
-    )
-    table.add_row(
-        "",
-        Panel(
-            n_content,
-            box=ROUNDED,
-            border_style="green" if north else "dim",
-            padding=(0, 1),
-        ),
-        "",
-    )
-
-    # Spacing row
     n_conn = "│" if north else " "
-    table.add_row("", n_conn, "")
-
-    # Row 2: West, You, East
-    w_content = (
-        f"[bold green]◀ WEST[/bold green]\n[cyan]{clean_name(west)}[/cyan]"
-        if west
-        else "[dim]◀\n[grey37]Blocked[/grey37][/dim]"
-    )
-    e_content = (
-        f"[bold green]EAST ▶[/bold green]\n[cyan]{clean_name(east)}[/cyan]"
-        if east
-        else "[dim]▶\n[grey37]Blocked[/grey37][/dim]"
-    )
-
-    w_panel = Panel(
-        w_content, box=ROUNDED, border_style="green" if west else "dim", padding=(0, 1)
-    )
-    center_panel = Panel(
-        "[bold gold1]★ YOU[/bold gold1]\n[bold white]HERE[/bold bold white]",
-        box=DOUBLE,
-        border_style="gold1",
-        padding=(0, 1),
-    )
-    e_panel = Panel(
-        e_content, box=ROUNDED, border_style="green" if east else "dim", padding=(0, 1)
-    )
-
-    table.add_row(w_panel, center_panel, e_panel)
-
-    # Spacing row
     s_conn = "│" if south else " "
-    table.add_row("", s_conn, "")
+    w_conn = "───" if west else "   "
+    e_conn = "───" if east else "   "
 
-    # Row 3: South Panel
-    s_content = (
-        f"[bold green]▼ SOUTH[/bold green]\n[cyan]{clean_name(south)}[/cyan]"
-        if south
-        else "[dim]▼\n[grey37]Blocked[/grey37][/dim]"
-    )
-    table.add_row(
-        "",
-        Panel(
-            s_content,
-            box=ROUNDED,
-            border_style="green" if south else "dim",
-            padding=(0, 1),
-        ),
-        "",
-    )
+    compass_text = Text()
+    compass_text.append(f"       {n_style}       \n")
+    compass_text.append(f"       {n_conn}       \n")
+    compass_text.append(f" {w_style} {w_conn}★{e_conn} {e_style} \n")
+    compass_text.append(f"       {s_conn}       \n")
+    compass_text.append(f"       {s_style}       ")
 
     return Panel(
-        table,
+        compass_text,
         title="[bold yellow]🧭 Local Exit Map[/bold yellow]",
         border_style="yellow",
         box=ROUNDED,
-        padding=(0, 1),
+        padding=(0, 2),
     )
 
 
@@ -329,15 +261,77 @@ def get_region_map_panel(room: Room, world: Optional[dict] = None) -> Optional[P
 
 
 _PREV_STATS: dict[str, int] = {}
+_PREV_COMBAT_STATS: dict[str, int] = {}
 
 
 def get_combined_actions_and_help_panel(
-    actions: List[tuple], valid_exits: List[str]
+    actions: List[tuple], valid_exits: List[str], current_input: str = ""
 ) -> Panel:
     """
     Renders a unified compact panel of numbered quick actions and context suggestions.
+    If the user has started typing, dynamically renders matching command suggestions!
     Fits perfectly in exactly 5 lines of vertical inner space (inside a size=7 footer layout).
     """
+    if current_input.strip():
+        cleaned = current_input.strip().lower()
+        suggestion_text = Text()
+        if cleaned == "go" or cleaned.startswith("go "):
+            directions = ", ".join(
+                f"[bold green]{dir_}[/bold green]" for dir_ in valid_exits
+            )
+            suggestion_text.append("🚪 Travel Paths: ", style="white")
+            suggestion_text.append(directions)
+            suggestion_text.append(
+                "\n💡 Shorthand: 'n', 's', 'e', 'w'", style="dim yellow"
+            )
+        elif cleaned.startswith("t") or cleaned.startswith("take"):
+            suggestion_text.append("📦 Usage: take <item_name>", style="yellow")
+            suggestion_text.append(
+                "\n💡 Example: 'take health potion'", style="dim yellow"
+            )
+        elif cleaned.startswith("talk") or cleaned.startswith("tk"):
+            suggestion_text.append(
+                "👤 Usage: talk to <npc_name> about <topic>", style="cyan"
+            )
+            suggestion_text.append(
+                "\n💡 Example: 'talk to Barnaby about quest'", style="dim cyan"
+            )
+        elif cleaned.startswith("u") or cleaned.startswith("use"):
+            suggestion_text.append("🧪 Usage: use <item_name>", style="magenta")
+            suggestion_text.append(
+                "\n💡 Example: 'use health potion'", style="dim magenta"
+            )
+        else:
+            suggestion_text.append(
+                f"🔍 Custom Command: '{cleaned}'", style="dim italic green"
+            )
+            suggestion_text.append(
+                "\n💡 Press Enter to submit command.", style="dim grey37"
+            )
+
+        # Pad with newlines to match 4 lines height precisely to prevent layout shifting
+        lines = len(suggestion_text.plain.split("\n"))
+        for _ in range(lines, 4):
+            suggestion_text.append("\n")
+
+        exits_shorthand = (
+            "/".join(e[0].lower() for e in valid_exits) if valid_exits else "none"
+        )
+        help_text = f"💡 [bold yellow]Hotkeys:[/bold yellow] [{exits_shorthand}] Move | [look] Inspect | [i] Bag"
+
+        table = Table.grid(expand=True)
+        table.add_column(ratio=100)
+        table.add_row(suggestion_text)
+        table.add_row(Text.from_markup(help_text, style="dim white"))
+
+        return Panel(
+            table,
+            title="⚡ [bold yellow]Command Synthesizer Help[/bold yellow]",
+            border_style="yellow",
+            box=ROUNDED,
+            padding=(0, 1),
+        )
+
     grid = Table.grid(expand=True)
     grid.add_column(style="bold yellow", justify="left", width=4)
     grid.add_column(style="white", justify="left")
@@ -382,6 +376,7 @@ def _print_layout_frame(
     message_log: Optional[List[str]] = None,
     is_impacted: bool = False,
     quick_actions: Optional[List[tuple]] = None,
+    current_input: str = "",
 ):
     header_style = "bold bright_green" if room.is_town else "bold deep_pink4"
     box_header = f"✨ {room.name}" if room.is_town else f"🌋 {room.name} (Hostile Area)"
@@ -573,7 +568,7 @@ def _print_layout_frame(
         quick_actions_panel = None
         if quick_actions is not None:
             quick_actions_panel = get_combined_actions_and_help_panel(
-                quick_actions, list(room.exits.keys())
+                quick_actions, list(room.exits.keys()), current_input=current_input
             )
 
         # 6. Assemble and print full screen dashboard layout
@@ -591,25 +586,9 @@ def _print_layout_frame(
         region_map_panel = get_region_map_panel(room, world)
         if region_map_panel:
             if quick_actions_panel is None:
-                # original layout
-                layout["body"]["map_views"].split_column(
-                    Layout(name="region_map", ratio=55),
-                    Layout(name="local_map", ratio=45),
-                )
-                layout["body"]["map_views"]["region_map"].update(region_map_panel)
-                layout["body"]["map_views"]["local_map"].update(minimap_panel)
+                layout["body"]["map_views"].update(region_map_panel)
             else:
-                # split row side-by-side inside map_views
-                layout["body"]["stats_and_maps"]["map_views"].split_row(
-                    Layout(name="region_map", ratio=50),
-                    Layout(name="local_map", ratio=50),
-                )
-                layout["body"]["stats_and_maps"]["map_views"]["region_map"].update(
-                    region_map_panel
-                )
-                layout["body"]["stats_and_maps"]["map_views"]["local_map"].update(
-                    minimap_panel
-                )
+                layout["body"]["stats_and_maps"]["map_views"].update(region_map_panel)
 
         console.print(layout)
 
@@ -663,6 +642,7 @@ def render_room_panel(
     message_log: Optional[List[str]] = None,
     is_impacted: bool = False,
     quick_actions: Optional[List[tuple]] = None,
+    current_input: str = "",
 ):
     """Renders visual layout of the player's current location with automatic, non-blocking stats animations."""
     global _PREV_STATS
@@ -741,6 +721,7 @@ def render_room_panel(
                 message_log,
                 is_impacted,
                 quick_actions,
+                current_input=current_input,
             )
 
             # Restore original state immediately
@@ -764,6 +745,7 @@ def render_room_panel(
         message_log,
         is_impacted,
         quick_actions,
+        current_input=current_input,
     )
 
 
@@ -804,54 +786,249 @@ def render_mini_party_hud(player: Player, party: List[Companion]):
     console.print(Columns(hud_cols))
 
 
-def render_combat_screen(
-    player: Player, party: List[Companion], enemy: Enemy, round_log: List[str]
+def _print_combat_dashboard_frame(
+    player: Player,
+    party: List[Companion],
+    enemy: Enemy,
+    round_log: List[str],
+    current_input: str = "",
+    is_player_impacted: bool = False,
+    is_enemy_impacted: bool = False,
 ):
-    """Displays structured layout for ongoing battles."""
-    console.print("\n" + "=" * 80)
-    console.print("[bold red]⚔️  BATTLE IN PROGRESS  ⚔️[/bold red]", justify="center")
-    console.print("=" * 80)
+    """Assembles and prints the combat dashboard layout frame."""
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.box import ROUNDED, DOUBLE
+    from aetheria.ui_meters import render_stat_progress_bar
 
-    # Combat Table comparing health
-    table = Table(box=ROUNDED, border_style="red", expand=True)
-    table.add_column("Hero Party", style="bold green", justify="left")
-    table.add_column("VS", style="bold yellow", justify="center")
-    table.add_column("Dungeon Enemy", style="bold red", justify="right")
+    # 1. Build Party Status Panel
+    party_table = Table.grid(expand=True)
+    party_table.add_column()
 
-    # Build Hero block
-    hero_lines = [
-        f"[bold gold1]{player.name}[/bold gold1] [dim]({player.char_class})[/dim] - HP: [bold green]{player.hp}/{player.max_hp}[/bold green] | MP: [bold cyan]{player.mana}/{player.max_mana}[/bold cyan]"
-    ]
-    for comp in party:
-        c_status = (
-            "Dead"
-            if not comp.is_alive
-            else f"HP: {comp.hp}/{comp.max_hp} | MP: {comp.mana}/{comp.max_mana}"
-        )
-        hero_lines.append(
-            f"[bold cyan]{comp.name}[/bold cyan] [dim]({comp.char_class})[/dim] - {c_status}"
-        )
-
-    hero_block = "\n".join(hero_lines)
-    enemy_block = (
-        f"[bold red]{enemy.name}[/bold red]\n"
-        f"Level: {enemy.level}\n"
-        f"HP: [bold red]{enemy.hp}/{enemy.max_hp}[/bold red]"
+    # Player HP, MP, XP
+    p_hp_bar = render_stat_progress_bar("HP", player.hp, player.max_hp, width=15)
+    p_mp_bar = render_stat_progress_bar(
+        "MP", player.mana, player.max_mana, width=15, color_scheme="mana"
+    )
+    p_xp_bar = render_stat_progress_bar(
+        "XP", player.xp, player.xp_to_next_level(), width=15, color_scheme="xp"
     )
 
-    table.add_row(hero_block, "⚔️", enemy_block)
-    console.print(table)
+    party_table.add_row(
+        Text.assemble(
+            Text("🌟 ", style="bold gold1"),
+            Text(f"{player.name} ", style="bold gold1"),
+            Text(f"({player.char_class}) Lvl {player.level}", style="white"),
+        )
+    )
+    party_table.add_row(p_hp_bar)
+    party_table.add_row(p_mp_bar)
+    party_table.add_row(p_xp_bar)
+    party_table.add_row("")
 
-    # Round action logs
-    if round_log:
-        console.print(
-            Panel(
-                "\n".join(round_log),
-                title="⚡ Combat Rounds Log",
-                border_style="yellow",
-                box=ROUNDED,
+    # Companions
+    for comp in party:
+        c_status = (
+            " [bold green]ALIVE[/bold green]"
+            if comp.is_alive
+            else " [bold dim red]DEAD[/bold dim red]"
+        )
+        c_hp_bar = render_stat_progress_bar("HP", comp.hp, comp.max_hp, width=12)
+        c_mp_bar = render_stat_progress_bar(
+            "MP", comp.mana, comp.max_mana, width=12, color_scheme="mana"
+        )
+        party_table.add_row(
+            Text.assemble(
+                Text("👥 ", style="cyan"),
+                Text(f"{comp.name} ", style="bold cyan"),
+                Text(f"({comp.char_class})", style="white"),
+                Text(c_status),
             )
         )
+        party_table.add_row(c_hp_bar)
+        party_table.add_row(c_mp_bar)
+        party_table.add_row("")
+
+    party_panel = Panel(
+        party_table,
+        title="[bold yellow]👥 Hero Party[/bold yellow]",
+        border_style="bold red" if is_player_impacted else "yellow",
+        box=DOUBLE if is_player_impacted else ROUNDED,
+        expand=True,
+    )
+
+    # 2. Build Enemy Status Panel
+    enemy_table = Table.grid(expand=True)
+    enemy_table.add_column()
+
+    e_hp_bar = render_stat_progress_bar("HP", enemy.hp, enemy.max_hp, width=15)
+    enemy_table.add_row(
+        Text.assemble(
+            Text("💀 ", style="bold red"),
+            Text(f"{enemy.name} ", style="bold red"),
+            Text(f"Lvl {enemy.level}", style="white"),
+        )
+    )
+    enemy_table.add_row(e_hp_bar)
+
+    # Add active status ailments to enemy if any
+    if hasattr(enemy, "ailments") and enemy.ailments.active_effects:
+        ailment_names = ", ".join(
+            f"[bold {effect.element_style}]{effect.name}[/bold {effect.element_style}]"
+            for effect in enemy.ailments.active_effects
+        )
+        enemy_table.add_row(Text.from_markup(f"\n⚠️ Ailments: {ailment_names}"))
+
+    enemy_table.add_row(
+        Text(
+            "\n⚡ Boss Enemy" if enemy.level >= 5 else "\nDungeon Monster",
+            style="italic dim red",
+        )
+    )
+
+    enemy_panel = Panel(
+        enemy_table,
+        title="[bold red]💀 Target Enemy[/bold red]",
+        border_style="bold red" if is_enemy_impacted else "red",
+        box=DOUBLE if is_enemy_impacted else ROUNDED,
+        expand=True,
+    )
+
+    # 3. Build Combat Log Panel
+    display_lines = [line.strip() for line in round_log if line.strip()]
+    # Keep the last 5 lines for combined layout height budget
+    recent_lines = display_lines[-5:] if len(display_lines) > 5 else display_lines
+    if not recent_lines:
+        recent_lines = ["[dim]Choose an action to initiate battle![/dim]"]
+
+    log_panel = Panel(
+        Text("\n").join([Text.from_markup(line) for line in recent_lines]),
+        title="⚡ [bold yellow]Combat Rounds Log[/bold yellow]",
+        border_style="yellow",
+        box=ROUNDED,
+        expand=True,
+        padding=(0, 1),
+    )
+
+    # 4. Build Suggestions Panel
+    combat_actions_panel = get_combat_suggestions_panel(current_input, player, enemy)
+
+    # 5. Assemble into full combat dashboard layout
+    layout = generate_combat_dashboard_layout(
+        party_panel=party_panel,
+        enemy_panel=enemy_panel,
+        log_panel=log_panel,
+        combat_actions_panel=combat_actions_panel,
+        header_title=f"⚔️ {player.name} vs {enemy.name} ⚔️",
+    )
+
+    console.print(layout)
+
+
+def render_combat_screen(
+    player: Player,
+    party: List[Companion],
+    enemy: Enemy,
+    round_log: List[str],
+    current_input: str = "",
+    is_player_impacted: bool = False,
+    is_enemy_impacted: bool = False,
+):
+    """Displays structured, animated layout for ongoing battles."""
+    global _PREV_COMBAT_STATS
+
+    current_stats = {
+        "player_hp": player.hp,
+        "player_mana": player.mana,
+        "enemy_hp": enemy.hp,
+    }
+    for comp in party:
+        current_stats[f"comp_{comp.name}_hp"] = comp.hp
+        current_stats[f"comp_{comp.name}_mana"] = comp.mana
+
+    # Detect stats changes
+    has_changes = False
+    if _PREV_COMBAT_STATS:
+        for k, v in current_stats.items():
+            if _PREV_COMBAT_STATS.get(k, v) != v:
+                has_changes = True
+                break
+
+    import os
+    import sys
+
+    is_interactive = (
+        sys.stdin.isatty()
+        and sys.stdout.isatty()
+        and "PYTEST_CURRENT_TEST" not in os.environ
+    )
+
+    if has_changes and is_interactive:
+        # Interpolate frame states over 5 frames
+        frames = 5
+        import time
+
+        for frame in range(1, frames):
+            t = frame / frames
+
+            # Backup original stats
+            orig_p_hp, orig_p_mana = player.hp, player.mana
+            orig_e_hp = enemy.hp
+
+            cached_p_hp = _PREV_COMBAT_STATS.get("player_hp", player.hp)
+            cached_p_mp = _PREV_COMBAT_STATS.get("player_mana", player.mana)
+            cached_e_hp = _PREV_COMBAT_STATS.get("enemy_hp", enemy.hp)
+
+            player.hp = int(cached_p_hp + t * (player.hp - cached_p_hp))
+            player.mana = int(cached_p_mp + t * (player.mana - cached_p_mp))
+            enemy.hp = int(cached_e_hp + t * (enemy.hp - cached_e_hp))
+
+            orig_comp_stats = []
+            for comp in party:
+                orig_hp, orig_mana = comp.hp, comp.mana
+                orig_comp_stats.append((comp, orig_hp, orig_mana))
+
+                cached_hp = _PREV_COMBAT_STATS.get(f"comp_{comp.name}_hp", comp.hp)
+                cached_mana = _PREV_COMBAT_STATS.get(
+                    f"comp_{comp.name}_mana", comp.mana
+                )
+
+                comp.hp = int(cached_hp + t * (comp.hp - cached_hp))
+                comp.mana = int(cached_mana + t * (comp.mana - cached_mana))
+
+            # Redraw frame
+            clear_and_home_screen()
+            _print_combat_dashboard_frame(
+                player=player,
+                party=party,
+                enemy=enemy,
+                round_log=round_log,
+                current_input=current_input,
+                is_player_impacted=is_player_impacted,
+                is_enemy_impacted=is_enemy_impacted,
+            )
+
+            # Restore original stats
+            player.hp, player.mana = orig_p_hp, orig_p_mana
+            enemy.hp = orig_e_hp
+            for comp, orig_hp, orig_mana in orig_comp_stats:
+                comp.hp, comp.mana = orig_hp, orig_mana
+
+            time.sleep(0.04)
+
+    # Save final cache and draw final frame
+    _PREV_COMBAT_STATS = current_stats
+    clear_and_home_screen()
+    _print_combat_dashboard_frame(
+        player=player,
+        party=party,
+        enemy=enemy,
+        round_log=round_log,
+        current_input=current_input,
+        is_player_impacted=is_player_impacted,
+        is_enemy_impacted=is_enemy_impacted,
+    )
 
 
 def render_full_party_hud(player: Player, party: List[Companion]):
