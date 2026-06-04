@@ -113,3 +113,52 @@ class TestPremiumUIUX(unittest.TestCase):
         result = interactive_prompt(["north", "south"], prompt_text="> ")
         self.assertEqual(result, "go north")
         mock_readline.assert_called_once()
+
+    def test_layout_capture_prevention(self):
+        """Verify that layout lines and box borders are detected as layout lines to prevent pollution."""
+        from mud_game import is_layout_line
+
+        # Border lines should be classified as layout lines
+        self.assertTrue(
+            is_layout_line("│                                             │")
+        )
+        self.assertTrue(
+            is_layout_line("┌───────────────────────────────────────────────┐")
+        )
+        self.assertTrue(is_layout_line("HP   [████████████] 90/90"))
+        self.assertTrue(is_layout_line("XP   [░░░░░░░░░░░░] 0/100"))
+
+        # Normal narrative lines should NOT be classified as layout lines
+        self.assertFalse(is_layout_line("You travel north to the Eldergrove Tavern."))
+        self.assertFalse(
+            is_layout_line("The tavernkeeper Barnaby says: Hello traveller!")
+        )
+
+    @patch("mud_game.build_default_world")
+    @patch("mud_game.get_default_quests")
+    def test_game_controller_capture_rendering_bypass(self, mock_quests, mock_world):
+        """Verify that GameController bypasses render_current_room during command capture."""
+        from mud_game import GameController
+        from unittest.mock import MagicMock
+
+        controller = GameController()
+        controller.player = MagicMock()
+        controller.player.current_room = MagicMock()
+        controller.player.current_room.items = []
+        controller.player.current_room.npcs = []
+        controller.player.current_room.enemy = None
+
+        # When is_capturing is True, calling render_current_room should call render_room_panel
+        # When is_capturing is False, calling render_current_room should return immediately
+        with patch("mud_game.render_room_panel") as mock_render:
+            controller.is_capturing = True
+            controller.render_current_room()
+            mock_render.assert_not_called()
+
+            controller.is_capturing = False
+            # Mock generate_dynamic_room_description
+            with patch(
+                "mud_game.generate_dynamic_room_description", return_value="Desc"
+            ):
+                controller.render_current_room()
+                mock_render.assert_called_once()

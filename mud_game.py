@@ -44,6 +44,17 @@ from aetheria.ui import (
 )
 
 
+def is_layout_line(line: str) -> bool:
+    """Helper to detect if a line is part of a TUI panel or layout border to prevent capture pollution."""
+    # Box Drawing range (0x2500 - 0x257F) and Block Elements range (0x2580 - 0x259F)
+    for c in line:
+        if 0x2500 <= ord(c) <= 0x259F:
+            return True
+    if "\033[" in line or "\x1b[" in line:
+        return True
+    return False
+
+
 class GameController:
     DIRECTIONS = {
         "n": "north",
@@ -102,6 +113,7 @@ class GameController:
         self.quests_observer = QuestObserver(self)
         self.quests_observer.register_listeners()
         self.message_log: list[str] = []
+        self.is_capturing = False
 
         # Initialize weather engine, clock, and scheduled NPCs for Phase 3
         from aetheria.weather import WeatherEngine
@@ -237,6 +249,8 @@ class GameController:
 
     def render_current_room(self):
         """Generates dynamic descriptive context and renders the beautiful room panel."""
+        if self.is_capturing:
+            return
         room = self.player.current_room
 
         # Assemble items
@@ -426,13 +440,19 @@ class GameController:
                     if self.is_heavy_command(command):
                         self.process_command(command)
                     else:
-                        with console.capture() as capture:
-                            self.process_command(command)
+                        try:
+                            self.is_capturing = True
+                            with console.capture() as capture:
+                                self.process_command(command)
+                        finally:
+                            self.is_capturing = False
                         captured_output = capture.get()
                         if captured_output.strip():
                             for line in captured_output.split("\n"):
-                                if line.strip():
-                                    self.message_log.append(line)
+                                line_stripped = line.strip()
+                                if line_stripped:
+                                    if not is_layout_line(line_stripped):
+                                        self.message_log.append(line)
                 except (KeyboardInterrupt, EOFError):
                     self.is_running = False
 
