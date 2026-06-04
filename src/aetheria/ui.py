@@ -66,6 +66,11 @@ def render_help_menu():
     table.add_row("party", "p", "View active party members, classes, and stats.")
     table.add_row("quests", "q", "Check active side-quests and objective progress.")
     table.add_row("inventory", "i", "Examine collected items and current gold.")
+    table.add_row(
+        "voice",
+        "v",
+        "Toggle AI speech voice narrations (Google Cloud TTS Chirp 3 HD) ON/OFF.",
+    )
     table.add_row("save", "-", "Manually save current progress securely.")
     table.add_row("load", "-", "Restore previously saved character files.")
     table.add_row("exit / quit", "-", "Shut down current game.")

@@ -17,6 +17,7 @@ from aetheria.world import build_default_world
 from aetheria.quests import get_default_quests
 from aetheria.combat import CombatManager
 from aetheria.save_system import save_game, load_game
+from aetheria.tts import TTSManager
 from aetheria.ai_engine import (
     generate_npc_dialogue,
     generate_companion_banter,
@@ -199,6 +200,7 @@ class GameController:
         render_room_panel(
             room, self.party, self.player, dynamic_description=dynamic_desc
         )
+        TTSManager().speak(dynamic_desc, "Narrator")
 
     def run(self):
         render_title_screen()
@@ -387,6 +389,9 @@ class GameController:
         elif verb == "load":
             self.handle_load()
 
+        elif verb in ["voice", "v"]:
+            self.toggle_voice()
+
         else:
             console.print(
                 "[red]I don't understand that command. Type 'help' to see options.[/red]"
@@ -448,6 +453,7 @@ class GameController:
             )
             if banter:
                 console.print(f'\n💬 [bold cyan]{speaker.name}[/bold cyan]: "{banter}"')
+                TTSManager().speak(banter, speaker.name)
 
     def take_item(self, item_name: str):
         room = self.player.current_room
@@ -724,6 +730,7 @@ class GameController:
             npc.dialogue_history = npc.dialogue_history[-10:]
 
         console.print(f"[bold cyan]{npc.name}[/bold cyan]: {dialogue}")
+        TTSManager().speak(dialogue, npc.name)
 
         # Quest Triggering and Complete checks (Special interactive NPCs)
         if npc.name == "Tavernkeeper Barnaby" and "quest" in topic_sub.lower():
@@ -813,6 +820,9 @@ class GameController:
         )
         console.print(
             f'💬 [bold cyan]{companion.name}[/bold cyan]: "Greetings. I am ready to explore the depths. Lead the way."'
+        )
+        TTSManager().speak(
+            "Greetings. I am ready to explore the depths. Lead the way.", companion.name
         )
 
     def enter_combat(self, enemy: Enemy):
@@ -920,6 +930,16 @@ class GameController:
 
             # Execute Round
             round_log = combat.execute_round(action, spell, consumable)
+
+            # Voice combat banter if enabled
+            import re
+
+            for log in round_log:
+                match = re.search(r"\[dim\]([^:]+):\s*\"([^\"]+)\"\[/dim\]", log)
+                if match:
+                    speaker_name = match.group(1).strip()
+                    banter_text = match.group(2).strip()
+                    TTSManager().speak(banter_text, speaker_name)
 
         # Post Combat Cleanup
         if combat.fled:
@@ -1115,6 +1135,18 @@ class GameController:
             self.render_current_room()
         except Exception as e:
             console.print(f"[bold red]❌ Error loading save game: {e}[/bold red]")
+
+    def toggle_voice(self):
+        tts = TTSManager()
+        tts.voice_enabled = not tts.voice_enabled
+        status = "ON" if tts.voice_enabled else "OFF"
+        console.print(f"\n📢 [bold green]Voice settings toggled: {status}[/bold green]")
+        if tts.voice_enabled:
+            tts.speak(
+                "Voice narration is now enabled. Welcome to Aetheria.", "Narrator"
+            )
+        else:
+            tts.stop_playback()
 
 
 if __name__ == "__main__":
