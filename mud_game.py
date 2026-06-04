@@ -44,12 +44,14 @@ from aetheria.ui import (
 
 def is_layout_line(line: str) -> bool:
     """Helper to detect if a line is part of a TUI panel or layout border to prevent capture pollution."""
+    import re
+
+    # Strip ANSI escape sequences
+    clean_line = re.sub(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])", "", line)
     # Box Drawing range (0x2500 - 0x257F) and Block Elements range (0x2580 - 0x259F)
-    for c in line:
+    for c in clean_line:
         if 0x2500 <= ord(c) <= 0x259F:
             return True
-    if "\033[" in line or "\x1b[" in line:
-        return True
     return False
 
 

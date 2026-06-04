@@ -20,7 +20,7 @@ def trigger_screen_damage_flash() -> None:
 
 
 def render_dynamic_impact_panel(
-    content: str, title: str, is_impacted: bool = False
+    content: str, title: str, is_impacted: bool = False, is_town: bool = False
 ) -> Panel:
     """
     Renders standard content panels. Undergoes dynamic styling transitions
@@ -41,6 +41,8 @@ def render_dynamic_impact_panel(
         # Standard exploration styling
         from rich.box import ROUNDED
 
+        border_style = "dim green" if is_town else "dim slate_blue1"
+
         return Panel(
-            content, title=title, border_style="green", box=ROUNDED, padding=(1, 2)
+            content, title=title, border_style=border_style, box=ROUNDED, padding=(1, 2)
         )
