@@ -72,29 +72,30 @@ def generate_main_dashboard_layout(
             )
         )
 
-        # Body Row split: Left (Room narrative + Quests + Exits) and Right (Maps + Party Stats)
+        # Body Row split: Left Column (Narrative + Log) and Right Column (Maps + Party Vitals)
         layout["body"].split_row(
-            Layout(name="exploration", ratio=55),
-            Layout(name="stats_and_maps", ratio=45),
+            Layout(name="left_column", ratio=55),
+            Layout(name="right_column", ratio=45),
         )
 
-        # Right side split: Top (Maps/Minimap) and Bottom (Party stats)
-        layout["body"]["stats_and_maps"].split_column(
+        # Left Column: Top (Exploration narrative) and Bottom (Recent Activity Log)
+        layout["body"]["left_column"].split_column(
+            Layout(name="exploration", ratio=65),
+            Layout(name="activity_log", ratio=35),
+        )
+
+        # Right Column: Top (Maps/Minimap) and Bottom (Party Vitals HUD)
+        layout["body"]["right_column"].split_column(
             Layout(name="map_views", ratio=40),
             Layout(name="party_hud", ratio=60),
         )
 
-        # Footer Row split: Left (Scrolling Activity Log) and Right (Quick Actions + Suggestions Hub)
-        layout["footer"].split_row(
-            Layout(name="activity_log", ratio=55),
-            Layout(name="quick_actions", ratio=45),
-        )
-
-        layout["body"]["exploration"].update(room_panel)
-        layout["body"]["stats_and_maps"]["map_views"].update(minimap_panel)
-        layout["body"]["stats_and_maps"]["party_hud"].update(party_panel)
-        layout["footer"]["activity_log"].update(log_panel)
-        layout["footer"]["quick_actions"].update(quick_actions_panel)
+        # Update renderables
+        layout["body"]["left_column"]["exploration"].update(room_panel)
+        layout["body"]["left_column"]["activity_log"].update(log_panel)
+        layout["body"]["right_column"]["map_views"].update(minimap_panel)
+        layout["body"]["right_column"]["party_hud"].update(party_panel)
+        layout["footer"].update(quick_actions_panel)
 
     return layout
 

@@ -68,7 +68,12 @@ class TestPremiumUIUX(unittest.TestCase):
         panel_normal = render_dynamic_impact_panel(
             "Content", "Title", is_impacted=False
         )
-        self.assertEqual(panel_normal.border_style, "green")
+        self.assertEqual(panel_normal.border_style, "dim slate_blue1")
+
+        panel_town = render_dynamic_impact_panel(
+            "Content", "Title", is_impacted=False, is_town=True
+        )
+        self.assertEqual(panel_town.border_style, "dim green")
 
         panel_impacted = render_dynamic_impact_panel(
             "Content", "Title", is_impacted=True
@@ -115,12 +120,13 @@ class TestPremiumUIUX(unittest.TestCase):
         self.assertIsNotNone(layout["footer"])
 
         # Verify specific sub-layouts exist in the reimagined layout
-        self.assertIsNotNone(layout["body"]["exploration"])
-        self.assertIsNotNone(layout["body"]["stats_and_maps"])
-        self.assertIsNotNone(layout["body"]["stats_and_maps"]["map_views"])
-        self.assertIsNotNone(layout["body"]["stats_and_maps"]["party_hud"])
-        self.assertIsNotNone(layout["footer"]["activity_log"])
-        self.assertIsNotNone(layout["footer"]["quick_actions"])
+        self.assertIsNotNone(layout["body"]["left_column"])
+        self.assertIsNotNone(layout["body"]["left_column"]["exploration"])
+        self.assertIsNotNone(layout["body"]["left_column"]["activity_log"])
+        self.assertIsNotNone(layout["body"]["right_column"])
+        self.assertIsNotNone(layout["body"]["right_column"]["map_views"])
+        self.assertIsNotNone(layout["body"]["right_column"]["party_hud"])
+        self.assertIsNotNone(layout["footer"])
 
     def test_smart_command_input_suggestions_hud(self):
         """Verify autocomplete HUD guides player inputs dynamically."""

@@ -16,6 +16,17 @@ class StatusEffect:
         self.dot_damage = dot_damage
         self.stat_modifiers = stat_modifiers or {}
 
+    @property
+    def element_style(self) -> str:
+        """Returns the color style for this status effect's element."""
+        styles = {
+            "Burn": "orange_red1",
+            "Frozen": "deep_sky_blue1",
+            "Shock": "bright_yellow",
+            "Wet": "dodger_blue1",
+        }
+        return styles.get(self.name, "white")
+
     def to_dict(self) -> dict:
         return {
             "name": self.name,

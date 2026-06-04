@@ -160,7 +160,7 @@ def get_minimap_panel(room: Room) -> Panel:
     return Panel(
         compass_text,
         title="[bold yellow]🧭 Local Exit Map[/bold yellow]",
-        border_style="yellow",
+        border_style="dim grey37",
         box=ROUNDED,
         padding=(0, 2),
     )
@@ -262,6 +262,7 @@ def get_region_map_panel(room: Room, world: Optional[dict] = None) -> Optional[P
 
 _PREV_STATS: dict[str, int] = {}
 _PREV_COMBAT_STATS: dict[str, int] = {}
+_LAST_REVEALED_ROOM: Optional[str] = None
 
 
 def get_combined_actions_and_help_panel(
@@ -438,19 +439,20 @@ def _print_layout_frame(
         # PREMIUM UI/UX TUI DASHBOARD RENDER PATH
         # 1. Build room panel with potential impact layout effect
         room_panel = render_dynamic_impact_panel(
-            "\n".join(room_details), box_header, is_impacted=is_impacted
+            "\n".join(room_details),
+            box_header,
+            is_impacted=is_impacted,
+            is_town=room.is_town,
         )
 
         # 2. Get local map (minimap) panel
         minimap_panel = get_minimap_panel(room)
 
-        # 3. Construct the party panel dynamically with graphical progress bars
+        # 3. Construct the party panel dynamically with graphical progress bars stacked vertically
         party_panel_content = Table.grid(expand=True)
-        party_panel_content.add_column(ratio=50)
-        party_panel_content.add_column(width=2)
-        party_panel_content.add_column(ratio=50)
+        party_panel_content.add_column()
 
-        # Player column
+        # Player stats
         p_hp_bar = render_stat_progress_bar("HP", player.hp, player.max_hp, width=12)
         p_mp_bar = render_stat_progress_bar(
             "MP", player.mana, player.max_mana, width=12, color_scheme="mana"
@@ -467,77 +469,59 @@ def _print_layout_frame(
             Text(f"🌟 {player.name} ", style="bold gold1"),
             Text(f"({player.char_class}) Lvl {player.level}\n", style="italic white"),
             p_hp_bar,
-            Text("  "),
+            Text("\n"),
             p_mp_bar,
-            Text("  "),
+            Text("\n"),
             p_xp_bar,
             Text("\n"),
             Text(
-                f"💰 Gold: {player.gold}  ⚔️ ATK: {player.attack}  🛡️ DEF: {player.defense}",
+                f"💰 {player.gold}  ⚔️ {player.attack}  🛡️ {player.defense}",
                 style="bold yellow",
             ),
         )
 
-        left_side = Panel(
-            player_info,
-            border_style="gold1",
-            box=ROUNDED,
-            title="[bold gold1]Hero[/bold gold1]",
-        )
+        party_panel_content.add_row(player_info)
 
-        companion_texts = []
-        for c in party:
-            c_status = (
-                " [bold green]ALIVE[/bold green]"
-                if c.is_alive
-                else " [bold dim red]DEAD[/bold dim red]"
-            )
-            c_hp_bar = render_stat_progress_bar("HP", c.hp, c.max_hp, width=10)
-            c_mp_bar = render_stat_progress_bar(
-                "MP", c.mana, c.max_mana, width=10, color_scheme="mana"
-            )
-            comp_info = Text.assemble(
-                Text(f"👥 {c.name} ", style="bold cyan"),
-                Text(f"({c.char_class}) Lvl {c.level}", style="white"),
-                Text(c_status),
-                Text("\n"),
-                c_hp_bar,
-                Text("  "),
-                c_mp_bar,
-            )
-            companion_texts.append(comp_info)
-
-        if companion_texts:
-            all_comp_text = Text()
-            for idx, ct in enumerate(companion_texts):
-                if idx > 0:
-                    all_comp_text.append("\n")
-                all_comp_text.append(ct)
-            right_side = Panel(
-                all_comp_text,
-                border_style="cyan",
-                box=ROUNDED,
-                title="[bold cyan]Companions[/bold cyan]",
-            )
+        if party:
+            party_panel_content.add_row(Text("─" * 32, style="dim grey37"))
+            for idx, c in enumerate(party):
+                c_status = (
+                    " [bold green]ALIVE[/bold green]"
+                    if c.is_alive
+                    else " [bold dim red]DEAD[/bold dim red]"
+                )
+                c_hp_bar = render_stat_progress_bar("HP", c.hp, c.max_hp, width=12)
+                c_mp_bar = render_stat_progress_bar(
+                    "MP", c.mana, c.max_mana, width=12, color_scheme="mana"
+                )
+                comp_info = Text.assemble(
+                    Text(f"👥 {c.name} ", style="bold cyan"),
+                    Text(f"({c.char_class}) Lvl {c.level}", style="white"),
+                    Text(c_status),
+                    Text("\n"),
+                    c_hp_bar,
+                    Text("\n"),
+                    c_mp_bar,
+                )
+                party_panel_content.add_row(comp_info)
+                if idx < len(party) - 1:
+                    party_panel_content.add_row(Text("  "))
         else:
-            right_side = Panel(
+            party_panel_content.add_row(Text("─" * 32, style="dim grey37"))
+            party_panel_content.add_row(
                 Text(
-                    "[italic dim]No companions in party.[/italic dim]\nRecruit allies at the Eldergrove Tavern!",
-                    justify="center",
-                ),
-                border_style="dim",
-                box=ROUNDED,
-                title="[dim]Companions[/dim]",
+                    "👥 No active companions.\nRecruit allies at the Tavern!",
+                    style="italic dim grey50",
+                )
             )
-
-        party_panel_content.add_row(left_side, "", right_side)
 
         party_panel = Panel(
             party_panel_content,
             title="[bold yellow]👥 Adventure Party Status[/bold yellow]",
-            border_style="yellow",
+            border_style="dim grey37",
             box=ROUNDED,
             expand=True,
+            padding=(0, 1),
         )
 
         # 4. Construct the structured log panel
@@ -558,7 +542,7 @@ def _print_layout_frame(
         log_panel = Panel(
             log_text,
             title="⚡ [bold gold1]Recent Activity Log[/bold gold1]",
-            border_style="gold1",
+            border_style="dim grey37",
             box=ROUNDED,
             expand=True,
             padding=(0, 1),
@@ -588,7 +572,7 @@ def _print_layout_frame(
             if quick_actions_panel is None:
                 layout["body"]["map_views"].update(region_map_panel)
             else:
-                layout["body"]["stats_and_maps"]["map_views"].update(region_map_panel)
+                layout["body"]["right_column"]["map_views"].update(region_map_panel)
 
         console.print(layout)
 
@@ -645,7 +629,7 @@ def render_room_panel(
     current_input: str = "",
 ):
     """Renders visual layout of the player's current location with automatic, non-blocking stats animations."""
-    global _PREV_STATS
+    global _PREV_STATS, _LAST_REVEALED_ROOM
 
     current_stats = {
         "player_hp": player.hp,
@@ -674,9 +658,40 @@ def render_room_panel(
         and "PYTEST_CURRENT_TEST" not in os.environ
     )
 
+    if is_interactive and _LAST_REVEALED_ROOM != room.name and message_log is not None:
+        _LAST_REVEALED_ROOM = room.name
+        full_desc = dynamic_description if dynamic_description else room.description
+        import time
+
+        words = full_desc.split(" ")
+        total_steps = 5
+        step_size = max(1, len(words) // total_steps)
+        for step in range(1, total_steps + 1):
+            limit = min(step * step_size, len(words))
+            if step == total_steps:
+                limit = len(words)
+            partial_desc = " ".join(words[:limit])
+            if limit < len(words):
+                partial_desc += " █"
+            clear_and_home_screen()
+            _print_layout_frame(
+                room,
+                party,
+                player,
+                dynamic_description=partial_desc,
+                world=world,
+                weather_engine=weather_engine,
+                world_clock=world_clock,
+                message_log=message_log,
+                is_impacted=is_impacted,
+                quick_actions=quick_actions,
+                current_input=current_input,
+            )
+            time.sleep(0.01)
+
     if has_changes and is_interactive and message_log is not None:
-        # Interpolate frame states
-        frames = 5
+        # Interpolate frame states over 3 frames for a snappier transition
+        frames = 3
         import time
 
         for frame in range(1, frames):
@@ -729,7 +744,7 @@ def render_room_panel(
             for comp, orig_hp, orig_mana in orig_comp_stats:
                 comp.hp, comp.mana = orig_hp, orig_mana
 
-            time.sleep(0.04)
+            time.sleep(0.02)
 
     # Print final frame and update cache
     _PREV_STATS = current_stats
@@ -876,7 +891,7 @@ def _print_combat_dashboard_frame(
     if hasattr(enemy, "ailments") and enemy.ailments.active_effects:
         ailment_names = ", ".join(
             f"[bold {effect.element_style}]{effect.name}[/bold {effect.element_style}]"
-            for effect in enemy.ailments.active_effects
+            for effect in enemy.ailments.active_effects.values()
         )
         enemy_table.add_row(Text.from_markup(f"\n⚠️ Ailments: {ailment_names}"))
 
@@ -965,8 +980,8 @@ def render_combat_screen(
     )
 
     if has_changes and is_interactive:
-        # Interpolate frame states over 5 frames
-        frames = 5
+        # Interpolate frame states over 3 frames
+        frames = 3
         import time
 
         for frame in range(1, frames):
@@ -1015,7 +1030,7 @@ def render_combat_screen(
             for comp, orig_hp, orig_mana in orig_comp_stats:
                 comp.hp, comp.mana = orig_hp, orig_mana
 
-            time.sleep(0.04)
+            time.sleep(0.02)
 
     # Save final cache and draw final frame
     _PREV_COMBAT_STATS = current_stats
@@ -1290,7 +1305,6 @@ def draw_eldergrove_map(current: str) -> str:
     map_str = f"""
                  [{t_style}]{t_marker}Tavern (Golden Oak)[/{t_style}]
                                 │
-                                │
  [{tp_style}]{tp_marker}Temple (Sanctuary)[/{tp_style}] ── [{c_style}]{c_marker}Center (Square)[/{c_style}] ── [{b_style}]{b_marker}Blacksmith[/{b_style}]
                                 │                             │
                                 ▼                             ▼
@@ -1314,13 +1328,10 @@ def draw_whisperwood_map(current: str) -> str:
 
     map_str = f"""
                       (From Eldergrove)
-                              │
                               ▼
                   [{ent_style}]{ent_marker}Whisperwood Entrance[/{ent_style}]
-                              │
                               ▼
                   [{gob_style}]{gob_marker}Goblin Outpost[/{gob_style}] ── [{gld_style}]{gld_marker}Whispering Glade[/{gld_style}]
-                              │                       (Glowing Herbs)
                               ▼
                   [{cav_style}]{cav_marker}Ancient Oak Cave[/{cav_style}]
                      (BOSS: Forest Ancient)
@@ -1361,19 +1372,14 @@ def draw_silverlight_shadowspire_map(
 
     map_str = f"""
                  (From Eldergrove)
-                        │
                         ▼
              [{brg_style}]{brg_marker}Silverlight Bridge{brg_lock_str}[/{brg_style}]
-                        │
                         ▼
              [{sq_style}]{sq_marker}Keep Square[/{sq_style}] ── [{arm_style}]{arm_marker}Royal Armory[/{arm_style}]
-                        │
                         ▼
              [{gat_style}]{gat_marker}Shadowspire Gates[/{gat_style}]
-                        │
                         ▼
              [{crt_style}]{crt_marker}Shadowspire Courtyard[/{crt_style}]
-                        │
                ┌────────┴────────┐
                ▼                 ▼
      [{lab_style}]{lab_marker}Alchem. Lab[/{lab_style}]     [{thr_style}]{thr_marker}Throne Room{thr_lock_str}[/{thr_style}]
