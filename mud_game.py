@@ -225,6 +225,64 @@ class GameController:
         )
         TTSManager().speak(dynamic_desc, "Narrator")
 
+        # Predictive prewarming of adjacent rooms' descriptions in background threads
+        self._prewarm_adjacent_rooms(room)
+
+    def _prewarm_adjacent_rooms(self, current_room):
+        """Identifies all adjacent rooms and spins up background daemon threads to pre-generate their dynamic descriptions."""
+        import threading
+
+        # Avoid prewarming if player is not fully initialized
+        if not self.player:
+            return
+
+        for direction, adj_room in current_room.exits.items():
+            if not adj_room:
+                continue
+
+            # Prepare arguments for the adjacent room description generator
+            items_list = [item.name for item in adj_room.items]
+            npcs_list = [(npc.name, npc.persona) for npc in adj_room.npcs]
+            enemy_name = adj_room.enemy.name if adj_room.enemy else None
+            enemy_hp_info = (
+                f"({adj_room.enemy.hp}/{adj_room.enemy.max_hp} HP)"
+                if (adj_room.enemy and adj_room.enemy.is_alive)
+                else None
+            )
+            party_list = [(c.name, c.personality) for c in self.party]
+
+            quest_context = "No active quests."
+            active_ids = self.player.active_quests
+            if active_ids:
+                quest_context = ", ".join(
+                    f"{self.quests[qid].name} (Status: In Progress)"
+                    for qid in active_ids
+                    if qid in self.quests
+                )
+
+            player_name = self.player.name
+            player_class = self.player.char_class
+
+            # Spin up a background thread to generate the dynamic description (populating the cache)
+            t = threading.Thread(
+                target=generate_dynamic_room_description,
+                kwargs={
+                    "room_name": adj_room.name,
+                    "base_description": adj_room.description,
+                    "is_town": adj_room.is_town,
+                    "items": items_list,
+                    "npcs": npcs_list,
+                    "enemy_name": enemy_name,
+                    "enemy_hp_info": enemy_hp_info,
+                    "player_name": player_name,
+                    "player_class": player_class,
+                    "party_members": party_list,
+                    "quest_context": quest_context,
+                },
+                daemon=True,
+            )
+            t.start()
+
     def run(self):
         render_title_screen()
         self.character_creation()
@@ -1151,16 +1209,21 @@ class GameController:
 
     def handle_load(self):
         try:
-            p, pt, w, q, rname, tav = load_game(self.world, self.quests)
+            p, pt, w, q, rname, tav, was_recovered = load_game(self.world, self.quests)
             self.player = p
             self.party = pt
             self.world = w
             self.quests = q
             self.tavern_companions = tav
 
-            console.print(
-                "[bold green]💾 Save game file successfully loaded![/bold green]"
-            )
+            if was_recovered:
+                console.print(
+                    "[bold yellow]⚠️ WARNING: Primary save file was corrupted or missing! Game successfully recovered from automatic backup (.bak).[/bold yellow]"
+                )
+            else:
+                console.print(
+                    "[bold green]💾 Save game file successfully loaded![/bold green]"
+                )
             self.render_current_room()
         except Exception as e:
             console.print(f"[bold red]❌ Error loading save game: {e}[/bold red]")

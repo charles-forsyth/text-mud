@@ -62,9 +62,11 @@ class TestAetheriaSaveSystem(unittest.TestCase):
             quests_loaded,
             room_name_loaded,
             tav_loaded,
+            was_recovered_loaded,
         ) = load_game(default_w, default_q)
 
         # 4. Verify identical states
+        self.assertFalse(was_recovered_loaded)
         self.assertEqual(p_loaded.name, "SaveHero")
         self.assertEqual(p_loaded.gold, 500)
         self.assertEqual(p_loaded.level, 2)
@@ -82,6 +84,63 @@ class TestAetheriaSaveSystem(unittest.TestCase):
 
         # Verify world room properties
         self.assertTrue(world_loaded["Eldergrove Center"].locked)
+
+    def test_save_game_corruption_and_backup_recovery(self):
+        # 1. Modify initial states
+        self.player.gold = 750
+
+        # 2. Execute First Save (this creates SAVE_FILE_NAME)
+        success = save_game(
+            player=self.player,
+            party=[],
+            world=self.world,
+            quests=self.quests,
+            current_room_name="Eldergrove Center",
+            tavern_companions=[],
+        )
+        self.assertTrue(success)
+
+        # 3. Modify state again and Save Second Time (this creates SAVE_FILE_NAME.bak of the first save and updates SAVE_FILE_NAME)
+        self.player.gold = 1000
+        success2 = save_game(
+            player=self.player,
+            party=[],
+            world=self.world,
+            quests=self.quests,
+            current_room_name="Eldergrove Center",
+            tavern_companions=[],
+        )
+        self.assertTrue(success2)
+
+        # Ensure both files exist
+        self.assertTrue(os.path.exists(SAVE_FILE_NAME))
+        self.assertTrue(os.path.exists(f"{SAVE_FILE_NAME}.bak"))
+
+        # 4. Corrupt the primary save file with invalid JSON
+        with open(SAVE_FILE_NAME, "w") as f:
+            f.write("{invalid_json: ...")
+
+        # 5. Load the game - it should fail on primary and automatically load the backup, which has gold = 750!
+        default_w = build_default_world()
+        default_q = get_default_quests()
+
+        (
+            p_loaded,
+            party_loaded,
+            world_loaded,
+            quests_loaded,
+            room_name_loaded,
+            tav_loaded,
+            was_recovered_loaded,
+        ) = load_game(default_w, default_q)
+
+        # Verify it was recovered and contains the data from the first save (gold = 750)
+        self.assertTrue(was_recovered_loaded)
+        self.assertEqual(p_loaded.gold, 750)
+
+        # Clean up files created during test
+        if os.path.exists(f"{SAVE_FILE_NAME}.bak"):
+            os.remove(f"{SAVE_FILE_NAME}.bak")
 
 
 if __name__ == "__main__":

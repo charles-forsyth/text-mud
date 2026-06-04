@@ -69,7 +69,21 @@ class TestTTSManager(unittest.TestCase):
             mock_temp_instance = MagicMock()
             mock_temp_instance.name = "fake_temp_path.mp3"
             mock_temp_file.return_value.__enter__.return_value = mock_temp_instance
-            mock_exists.return_value = True
+
+            import os
+
+            original_exists = os.path.exists
+
+            def selective_exists(path):
+                if path == "previous_temp_file.mp3":
+                    return True
+                if "fake_temp_path.mp3" in str(path):
+                    return True
+                if ".tts_cache" in str(path):
+                    return False
+                return original_exists(path)
+
+            mock_exists.side_effect = selective_exists
 
             # Set previous file to test deletion cleanup
             self.tts._current_temp_file = "previous_temp_file.mp3"
