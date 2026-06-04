@@ -5,7 +5,7 @@ import queue
 import hashlib
 import time
 import pygame
-from typing import Optional
+from typing import Optional, Any
 from google.cloud import texttospeech
 from google.api_core import exceptions
 
@@ -65,17 +65,18 @@ class CircuitBreaker:
 class TTSManager:
     """Manages thread-safe text-to-speech synthesis and cached non-blocking playback."""
 
-    _instance = None
+    _instance: Optional["TTSManager"] = None
+    _initialized: bool = False
     _lock = threading.Lock()
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "TTSManager":
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(TTSManager, cls).__new__(cls)
                 cls._instance._initialized = False
             return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         if self._initialized:
             return
         self.voice_enabled = False
