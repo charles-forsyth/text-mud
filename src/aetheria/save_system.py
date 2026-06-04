@@ -169,6 +169,9 @@ def save_game(
 class LoadGameResult(tuple):
     """Custom tuple subclass to allow unpacking exactly 7 values for backward compatibility, while exposing extra attributes."""
 
+    clock_data: Optional[Dict[str, Any]]
+    weather_data: Optional[Dict[str, Any]]
+
     def __new__(
         cls,
         player: Player,
