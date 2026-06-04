@@ -81,13 +81,117 @@ def render_help_menu():
     console.print(table)
 
 
+def get_minimap_panel(room: Room) -> Panel:
+    """Renders a beautiful ASCII exit compass map of the current room."""
+    north = room.get_exit("north")
+    south = room.get_exit("south")
+    east = room.get_exit("east")
+    west = room.get_exit("west")
+
+    def clean_name(r) -> str:
+        if not r:
+            return "Blocked"
+        name = r.name
+        name = name.replace("Eldergrove ", "")
+        name = name.replace("Silverlight ", "")
+        name = name.replace("Shadowspire ", "")
+        if "Tavern" in name:
+            name = "Tavern"
+        if len(name) > 13:
+            return name[:10] + "..."
+        return name
+
+    # Create the internal grid
+    table = Table.grid(expand=True)
+    table.add_column(justify="center", ratio=1)
+    table.add_column(justify="center", ratio=1)
+    table.add_column(justify="center", ratio=1)
+
+    # Row 1: North Panel
+    n_content = (
+        f"[bold green]▲ NORTH[/bold green]\n[cyan]{clean_name(north)}[/cyan]"
+        if north
+        else "[dim]▲\n[grey37]Blocked[/grey37][/dim]"
+    )
+    table.add_row(
+        "",
+        Panel(
+            n_content,
+            box=ROUNDED,
+            border_style="green" if north else "dim",
+            padding=(0, 1),
+        ),
+        "",
+    )
+
+    # Spacing row
+    n_conn = "│" if north else " "
+    table.add_row("", n_conn, "")
+
+    # Row 2: West, You, East
+    w_content = (
+        f"[bold green]◀ WEST[/bold green]\n[cyan]{clean_name(west)}[/cyan]"
+        if west
+        else "[dim]◀\n[grey37]Blocked[/grey37][/dim]"
+    )
+    e_content = (
+        f"[bold green]EAST ▶[/bold green]\n[cyan]{clean_name(east)}[/cyan]"
+        if east
+        else "[dim]▶\n[grey37]Blocked[/grey37][/dim]"
+    )
+
+    w_panel = Panel(
+        w_content, box=ROUNDED, border_style="green" if west else "dim", padding=(0, 1)
+    )
+    center_panel = Panel(
+        "[bold gold1]★ YOU[/bold gold1]\n[bold white]HERE[/bold bold white]",
+        box=DOUBLE,
+        border_style="gold1",
+        padding=(0, 1),
+    )
+    e_panel = Panel(
+        e_content, box=ROUNDED, border_style="green" if east else "dim", padding=(0, 1)
+    )
+
+    table.add_row(w_panel, center_panel, e_panel)
+
+    # Spacing row
+    s_conn = "│" if south else " "
+    table.add_row("", s_conn, "")
+
+    # Row 3: South Panel
+    s_content = (
+        f"[bold green]▼ SOUTH[/bold green]\n[cyan]{clean_name(south)}[/cyan]"
+        if south
+        else "[dim]▼\n[grey37]Blocked[/grey37][/dim]"
+    )
+    table.add_row(
+        "",
+        Panel(
+            s_content,
+            box=ROUNDED,
+            border_style="green" if south else "dim",
+            padding=(0, 1),
+        ),
+        "",
+    )
+
+    return Panel(
+        table,
+        title="[bold yellow]🧭 Local Exit Map[/bold yellow]",
+        border_style="yellow",
+        box=ROUNDED,
+        padding=(0, 1),
+    )
+
+
 def render_room_panel(
     room: Room,
     party: List[Companion],
     player: Player,
     dynamic_description: Optional[str] = None,
 ):
-    """Renders a beautiful visual layout of the player's current location."""
+    """Renders a beautiful visual layout of the player's current location with a local minimap."""
     header_style = "bold bright_green" if room.is_town else "bold deep_pink4"
     box_header = f"✨ {room.name}" if room.is_town else f"🌋 {room.name} (Hostile Area)"
 
@@ -130,16 +234,27 @@ def render_room_panel(
         f"🚪 [bold green]Exits:[/bold green] {exits_str if exits_str else '[dim]None[/dim]'}"
     )
 
-    # Render Main Room Panel
-    console.print(
-        Panel(
-            "\n".join(room_details),
-            title=f"[{header_style}]{box_header}[/{header_style}]",
-            box=ROUNDED,
-            border_style="green" if room.is_town else "red",
-            padding=(1, 2),
-        )
+    # Create side-by-side Table layout
+    layout_table = Table.grid(expand=True)
+    layout_table.add_column(ratio=65)
+    layout_table.add_column(width=2)
+    layout_table.add_column(ratio=35)
+
+    room_panel = Panel(
+        "\n".join(room_details),
+        title=f"[{header_style}]{box_header}[/{header_style}]",
+        box=ROUNDED,
+        border_style="green" if room.is_town else "red",
+        padding=(1, 2),
+        expand=True,
     )
+
+    minimap_panel = get_minimap_panel(room)
+
+    layout_table.add_row(room_panel, "", minimap_panel)
+
+    # Render Main Room side-by-side Panel
+    console.print(layout_table)
 
     # Render Side Mini-HUD
     render_mini_party_hud(player, party)

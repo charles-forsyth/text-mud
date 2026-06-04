@@ -74,6 +74,16 @@ class TestAetheriaWorld(unittest.TestCase):
                 # Verify standard elements like our header or legend are present
                 self.assertIn("WORLD MAP OF AETHERIA", output)
 
+    def test_get_minimap_panel_all_rooms(self):
+        from aetheria.ui import get_minimap_panel
+        from rich.panel import Panel
+
+        for room in self.world.values():
+            panel = get_minimap_panel(room)
+            self.assertIsInstance(panel, Panel)
+            # Verify basic visual properties
+            self.assertEqual(panel.title, "[bold yellow]🧭 Local Exit Map[/bold yellow]")
+
 
 if __name__ == "__main__":
     unittest.main()
