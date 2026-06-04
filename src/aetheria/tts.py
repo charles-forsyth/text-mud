@@ -1,6 +1,8 @@
 import os
 import tempfile
 import threading
+import queue
+import hashlib
 import pygame
 from typing import Optional
 from google.cloud import texttospeech
@@ -22,8 +24,26 @@ DEFAULT_FEMALE_VOICE = "en-US-Chirp3-HD-Zephyr"
 DEFAULT_MALE_VOICE = "en-US-Chirp3-HD-Enceladus"
 
 
+class CircuitBreaker:
+    """Protects against persistent slow/offline network calls by tripping after consecutive failures."""
+
+    def __init__(self, failure_threshold: int = 3):
+        self.failure_threshold = failure_threshold
+        self.failure_count = 0
+        self.is_open = False
+
+    def record_success(self):
+        self.failure_count = 0
+        self.is_open = False
+
+    def record_failure(self):
+        self.failure_count += 1
+        if self.failure_count >= self.failure_threshold:
+            self.is_open = True
+
+
 class TTSManager:
-    """Manages text-to-speech synthesis and non-blocking playback for Aetheria MUD."""
+    """Manages thread-safe text-to-speech synthesis and cached non-blocking playback."""
 
     _instance = None
     _lock = threading.Lock()
@@ -40,9 +60,15 @@ class TTSManager:
             return
         self.voice_enabled = False
         self._current_temp_file: Optional[str] = None
-        self._play_thread: Optional[threading.Thread] = None
         self._initialized = True
         self._client: Optional[texttospeech.TextToSpeechClient] = None
+
+        # Queue-based asynchronous worker system
+        self._queue: queue.Queue = queue.Queue()
+        self._latest_request_id = 0
+        self._cache_dir = ".tts_cache"
+        self._tts_breaker = CircuitBreaker()
+        self._worker_thread: Optional[threading.Thread] = None
 
     def initialize_client(self) -> bool:
         """Initializes the TTS client if not already done."""
@@ -128,13 +154,55 @@ class TTSManager:
         if not clean_text:
             return
 
-        # Run synthesis and playback in a separate thread to prevent game freezes
-        thread = threading.Thread(
-            target=self._synthesize_and_play,
-            args=(clean_text, speaker_name),
-            daemon=True,
+        # Generate a new request_id under lock
+        with self._lock:
+            self._latest_request_id += 1
+            request_id = self._latest_request_id
+
+        # Push the task to the queue
+        self._queue.put(
+            {
+                "text": clean_text,
+                "speaker_name": speaker_name,
+                "request_id": request_id,
+            }
         )
-        thread.start()
+
+        # Ensure background worker is active
+        self._start_worker_if_needed()
+
+    def _start_worker_if_needed(self):
+        """Lazily spawns the background worker thread."""
+        with self._lock:
+            if self._worker_thread is None or not self._worker_thread.is_alive():
+                self._worker_thread = threading.Thread(
+                    target=self._worker_loop,
+                    daemon=True,
+                )
+                self._worker_thread.start()
+
+    def _worker_loop(self):
+        """Background daemon processing speech tasks from the queue sequentially."""
+        while True:
+            try:
+                task = self._queue.get()
+                if task is None:
+                    break
+
+                request_id = task["request_id"]
+                text = task["text"]
+                speaker_name = task["speaker_name"]
+
+                # Quick pre-check: skip task if a newer speech action has been requested
+                with self._lock:
+                    if request_id != self._latest_request_id:
+                        self._queue.task_done()
+                        continue
+
+                self._synthesize_and_play(text, speaker_name, request_id)
+                self._queue.task_done()
+            except Exception:
+                pass
 
     def _strip_rich_tags(self, text: str) -> str:
         """Strips Rich library tags like [bold red]...[/bold red] from text."""
@@ -143,56 +211,100 @@ class TTSManager:
         # Strip BBCode-like tags
         return re.sub(r"\[\/?[a-zA-Z0-9_\s#=,.-]+\]", "", text)
 
-    def _synthesize_and_play(self, text: str, speaker_name: str):
-        """Worker function that handles synthesis and playback."""
-        if not self.initialize_client():
-            return
+    def _synthesize_and_play(
+        self, text: str, speaker_name: str, request_id: Optional[int] = None
+    ):
+        """Synthesizes speech (using local disk cache if available) and plays it back safely."""
+        # Check if obsolete before doing work
+        if request_id is not None:
+            with self._lock:
+                if request_id != self._latest_request_id:
+                    return
 
         voice_name = self.select_voice(speaker_name)
 
+        # 1. Attempt to resolve audio from disk cache
+        cache_path = None
+        audio_content = None
+        if self._cache_dir:
+            try:
+                os.makedirs(self._cache_dir, exist_ok=True)
+                h = hashlib.sha256(f"{voice_name}:{text}".encode("utf-8")).hexdigest()
+                cache_path = os.path.join(self._cache_dir, f"{h}.mp3")
+                if os.path.exists(cache_path):
+                    with open(cache_path, "rb") as f:
+                        audio_content = f.read()
+            except Exception:
+                pass
+
+        # 2. Synthesize via API if not in cache and breaker is closed
+        if not audio_content:
+            if self._tts_breaker.is_open:
+                return
+
+            if not self.initialize_client():
+                self._tts_breaker.record_failure()
+                return
+
+            try:
+                synthesis_input = texttospeech.SynthesisInput(text=text)
+                voice_params = texttospeech.VoiceSelectionParams(
+                    language_code="en-US", name=voice_name
+                )
+                audio_config = texttospeech.AudioConfig(
+                    audio_encoding=texttospeech.AudioEncoding.MP3
+                )
+
+                response = self._client.synthesize_speech(  # type: ignore
+                    input=synthesis_input, voice=voice_params, audio_config=audio_config
+                )
+                audio_content = response.audio_content
+                self._tts_breaker.record_success()
+
+                # Save synthesized audio to disk cache
+                if cache_path:
+                    try:
+                        with open(cache_path, "wb") as f:
+                            f.write(audio_content)
+                    except Exception:
+                        pass
+            except exceptions.GoogleAPICallError as e:
+                self._tts_breaker.record_failure()
+                # Fast trip breaker on authentication or permission issues
+                if hasattr(e, "code") and e.code in (400, 403):
+                    self._tts_breaker.is_open = True
+                return
+            except Exception:
+                self._tts_breaker.record_failure()
+                return
+
+        # 3. Post-synthesis obsolete check
+        if request_id is not None:
+            with self._lock:
+                if request_id != self._latest_request_id:
+                    return
+
+        # 4. Safe single-threaded Pygame playback
         try:
-            # 1. Synthesis
-            synthesis_input = texttospeech.SynthesisInput(text=text)
-            voice_params = texttospeech.VoiceSelectionParams(
-                language_code="en-US", name=voice_name
-            )
-            audio_config = texttospeech.AudioConfig(
-                audio_encoding=texttospeech.AudioEncoding.MP3
-            )
-
-            response = self._client.synthesize_speech(  # type: ignore
-                input=synthesis_input, voice=voice_params, audio_config=audio_config
-            )
-
-            # 2. Stop any active playback
             self.stop_playback()
 
-            # 3. Write response to a new temporary file
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
-                temp_file.write(response.audio_content)
+                temp_file.write(audio_content)
                 temp_path = temp_file.name
 
-            # 4. Play using pygame
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
 
             pygame.mixer.music.load(temp_path)
             pygame.mixer.music.play()
 
-            # 5. Track file path to delete it later
             old_file = self._current_temp_file
             self._current_temp_file = temp_path
 
-            # Attempt to delete the previous file
             if old_file and os.path.exists(old_file):
                 try:
                     os.remove(old_file)
                 except Exception:
                     pass
-
-        except exceptions.GoogleAPICallError:
-            # Handle Google Cloud API errors gracefully
-            pass
         except Exception:
-            # Handle any other exceptions (pygame initialization or file locks) gracefully
             pass

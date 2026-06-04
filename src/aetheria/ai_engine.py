@@ -13,9 +13,33 @@ except Exception:
     _api_ready = False
 
 
+class CircuitBreaker:
+    """Protects against persistent slow/offline network calls by tripping after consecutive failures."""
+
+    def __init__(self, failure_threshold: int = 3):
+        self.failure_threshold = failure_threshold
+        self.failure_count = 0
+        self.is_open = False
+
+    def record_success(self):
+        self.failure_count = 0
+        self.is_open = False
+
+    def record_failure(self):
+        self.failure_count += 1
+        if self.failure_count >= self.failure_threshold:
+            self.is_open = True
+
+
+_gemini_breaker = CircuitBreaker()
+
+# In-memory cache for generated room descriptions
+_ROOM_DESC_CACHE: dict[tuple, str] = {}
+
+
 def call_gemini(prompt: str, temperature: float = 0.7) -> str:
     """Helper to safely make calls to Google Gemini with a procedural fallback."""
-    if not _api_ready:
+    if not _api_ready or _gemini_breaker.is_open:
         return ""
     try:
         model = genai.GenerativeModel(DEFAULT_AI_MODEL)
@@ -26,9 +50,17 @@ def call_gemini(prompt: str, temperature: float = 0.7) -> str:
                 max_output_tokens=300,
             ),
         )
+        _gemini_breaker.record_success()
         return response.text.strip()
-    except Exception:
-        # Graceful fallback to indicate that the API might be throttled/offline
+    except Exception as e:
+        _gemini_breaker.record_failure()
+        # Fast trip breaker on authorization/invalid key errors
+        err_msg = str(e).lower()
+        if any(
+            term in err_msg
+            for term in ["api_key", "invalid", "permission", "400", "403"]
+        ):
+            _gemini_breaker.is_open = True
         return ""
 
 
@@ -208,6 +240,26 @@ def generate_dynamic_room_description(
     quest_context: str,
 ) -> str:
     """Generates a highly immersive, cohesive, and context-aware description of the room based on present entities."""
+
+    # 1. Create a stable, hashable cache key from the inputs
+    cache_key = (
+        room_name,
+        base_description,
+        is_town,
+        tuple(sorted(items)),
+        tuple(sorted(npcs)),
+        enemy_name,
+        enemy_hp_info,
+        player_name,
+        player_class,
+        tuple(sorted(party_members)),
+        quest_context,
+    )
+
+    # 2. Check the in-memory cache
+    if cache_key in _ROOM_DESC_CACHE:
+        return _ROOM_DESC_CACHE[cache_key]
+
     party_str = "None"
     if party_members:
         party_str = ", ".join(f"{name} ({desc})" for name, desc in party_members)
@@ -251,6 +303,13 @@ Do NOT repeat the name of the room. Keep it highly immersive and under 100 words
 """
     response = call_gemini(prompt, temperature=0.7)
     if response:
+        # Cache the response to prevent repeated API calls
+        # Evict oldest entry if cache exceeds 100 elements to prevent leaks
+        if len(_ROOM_DESC_CACHE) >= 100:
+            # Delete first key (since dict is ordered by insertion in Python 3.7+)
+            first_key = next(iter(_ROOM_DESC_CACHE))
+            del _ROOM_DESC_CACHE[first_key]
+        _ROOM_DESC_CACHE[cache_key] = response
         return response
 
     # Clean procedural fallback
@@ -268,4 +327,11 @@ Do NOT repeat the name of the room. Keep it highly immersive and under 100 words
         fallback_parts.append(f"You spot {', '.join(npc_names)} standing nearby.")
     if enemy_name:
         fallback_parts.append(f"A hostile {enemy_name} glares at you from the shadows.")
-    return " ".join(fallback_parts)
+
+    fallback_desc = " ".join(fallback_parts)
+    # Cache the fallback too to prevent repeated failures trying to hit the API
+    if len(_ROOM_DESC_CACHE) >= 100:
+        first_key = next(iter(_ROOM_DESC_CACHE))
+        del _ROOM_DESC_CACHE[first_key]
+    _ROOM_DESC_CACHE[cache_key] = fallback_desc
+    return fallback_desc
