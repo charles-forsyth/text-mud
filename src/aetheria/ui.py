@@ -67,6 +67,9 @@ def render_help_menu():
     table.add_row("quests", "q", "Check active side-quests and objective progress.")
     table.add_row("inventory", "i", "Examine collected items and current gold.")
     table.add_row(
+        "map", "m", "Show the visual world maps with your highlighted location."
+    )
+    table.add_row(
         "voice",
         "v",
         "Toggle AI speech voice narrations (Google Cloud TTS Chirp 3 HD) ON/OFF.",
@@ -425,3 +428,253 @@ def render_quick_actions(actions: List[tuple]):
             box=ROUNDED,
         )
     )
+
+
+def draw_eldergrove_map(current: str) -> str:
+    # Nodes
+    t_style = (
+        "bold yellow"
+        if current == "Eldergrove Tavern (The Golden Oak)"
+        else "bold green"
+    )
+    t_marker = "★ " if current == "Eldergrove Tavern (The Golden Oak)" else "  "
+
+    c_style = "bold yellow" if current == "Eldergrove Center" else "bold green"
+    c_marker = "★ " if current == "Eldergrove Center" else "  "
+
+    tp_style = (
+        "bold yellow"
+        if current == "Eldergrove Temple (Aether Sanctuary)"
+        else "bold green"
+    )
+    tp_marker = "★ " if current == "Eldergrove Temple (Aether Sanctuary)" else "  "
+
+    b_style = (
+        "bold yellow"
+        if current == "Eldergrove Blacksmith (Iron & Ash)"
+        else "bold green"
+    )
+    b_marker = "★ " if current == "Eldergrove Blacksmith (Iron & Ash)" else "  "
+
+    map_str = f"""
+                      [{t_style}]{t_marker}Tavern (The Golden Oak)[/{t_style}]
+                                      │
+                                      │
+ [{tp_style}]{tp_marker}Temple (Aether Sanctuary)[/{tp_style}] ─── [{c_style}]{c_marker}Village Center (Square)[/{c_style}] ─── [{b_style}]{b_marker}Blacksmith (Iron & Ash)[/{b_style}]
+                                      │                                       │
+                                      │                                       │
+                                      ▼                                       ▼
+                          (To Whisperwood Entrance)                (To Silverlight Bridge)
+"""
+    return map_str
+
+
+def draw_whisperwood_map(current: str) -> str:
+    ent_style = "bold yellow" if current == "Whisperwood Entrance" else "bold red"
+    ent_marker = "★ " if current == "Whisperwood Entrance" else "  "
+
+    gob_style = "bold yellow" if current == "Goblin Outpost" else "bold red"
+    gob_marker = "★ " if current == "Goblin Outpost" else "  "
+
+    gld_style = "bold yellow" if current == "Whispering Glade" else "bold red"
+    gld_marker = "★ " if current == "Whispering Glade" else "  "
+
+    cav_style = "bold yellow" if current == "Ancient Oak Cave" else "bold red"
+    cav_marker = "★ " if current == "Ancient Oak Cave" else "  "
+
+    map_str = f"""
+                            (From Eldergrove Center)
+                                      │
+                                      ▼
+                          [{ent_style}]{ent_marker}Whisperwood Entrance[/{ent_style}]
+                                      │
+                                      │
+                                      ▼
+                            [{gob_style}]{gob_marker}Goblin Outpost[/{gob_style}] ─── [{gld_style}]{gld_marker}Whispering Glade[/{gld_style}]
+                                      │                           (Glowing Herbs)
+                                      │
+                                      ▼
+                            [{cav_style}]{cav_marker}Ancient Oak Cave[/{cav_style}]
+                          (BOSS: The Forest Ancient)
+"""
+    return map_str
+
+
+def draw_silverlight_shadowspire_map(
+    current: str, bridge_locked: bool, throne_locked: bool
+) -> str:
+    brg_lock_str = " [🔒 LOCKED]" if bridge_locked else ""
+    thr_lock_str = " [🔒 LOCKED]" if throne_locked else ""
+
+    brg_style = (
+        "bold yellow"
+        if current == "Silverlight Bridge"
+        else ("bold red" if bridge_locked else "bold green")
+    )
+    brg_marker = "★ " if current == "Silverlight Bridge" else "  "
+
+    sq_style = "bold yellow" if current == "Silverlight Keep Square" else "bold green"
+    sq_marker = "★ " if current == "Silverlight Keep Square" else "  "
+
+    arm_style = "bold yellow" if current == "Silverlight Royal Armory" else "bold green"
+    arm_marker = "★ " if current == "Silverlight Royal Armory" else "  "
+
+    gat_style = "bold yellow" if current == "Shadowspire Gates" else "bold red"
+    gat_marker = "★ " if current == "Shadowspire Gates" else "  "
+
+    crt_style = "bold yellow" if current == "Shadowspire Courtyard" else "bold red"
+    crt_marker = "★ " if current == "Shadowspire Courtyard" else "  "
+
+    lab_style = "bold yellow" if current == "Alchemical Laboratory" else "bold red"
+    lab_marker = "★ " if current == "Alchemical Laboratory" else "  "
+
+    thr_style = "bold yellow" if current == "Shadow Throne Room" else "bold red"
+    thr_marker = "★ " if current == "Shadow Throne Room" else "  "
+
+    map_str = f"""
+                   (From Eldergrove Blacksmith)
+                               │
+                               ▼
+                   [{brg_style}]{brg_marker}Silverlight Bridge{brg_lock_str}[/{brg_style}]
+                               │
+                               │
+                               ▼
+                   [{sq_style}]{sq_marker}Silverlight Keep Square[/{sq_style}] ─── [{arm_style}]{arm_marker}Royal Armory[/{arm_style}]
+                               │
+                               │
+                               ▼
+                   [{gat_style}]{gat_marker}Shadowspire Gates[/{gat_style}]
+                               │
+                               │
+                               ▼
+                   [{crt_style}]{crt_marker}Shadowspire Courtyard[/{crt_style}]
+                               │
+                ┌──────────────┴──────────────┐
+                │                             │
+                ▼                             ▼
+   [{lab_style}]{lab_marker}Alchemical Laboratory[/{lab_style}]     [{thr_style}]{thr_marker}Shadow Throne Room{thr_lock_str}[/{thr_style}]
+         (Void Horror)                (BOSS: Archmage Malakor)
+"""
+    return map_str
+
+
+def render_world_map(player_room_name: str, world_rooms: dict):
+    """Renders a beautiful premium map of all three regions of Aetheria."""
+    region1_rooms = [
+        "Eldergrove Center",
+        "Eldergrove Tavern (The Golden Oak)",
+        "Eldergrove Blacksmith (Iron & Ash)",
+        "Eldergrove Temple (Aether Sanctuary)",
+    ]
+    region2_rooms = [
+        "Whisperwood Entrance",
+        "Goblin Outpost",
+        "Whispering Glade",
+        "Ancient Oak Cave",
+    ]
+    region3_rooms = [
+        "Silverlight Bridge",
+        "Silverlight Keep Square",
+        "Silverlight Royal Armory",
+        "Shadowspire Gates",
+        "Shadowspire Courtyard",
+        "Alchemical Laboratory",
+        "Shadow Throne Room",
+    ]
+
+    is_in_r1 = player_room_name in region1_rooms
+    is_in_r2 = player_room_name in region2_rooms
+    is_in_r3 = player_room_name in region3_rooms
+
+    bridge_locked = world_rooms["Silverlight Bridge"].locked
+    throne_locked = world_rooms["Shadow Throne Room"].locked
+
+    r1_border = "gold1" if is_in_r1 else "blue"
+    r1_sub = (
+        "[bold blink gold1]⭐ YOU ARE HERE[/bold blink gold1]"
+        if is_in_r1
+        else "[dim]Safe Haven[/dim]"
+    )
+
+    r2_border = "gold1" if is_in_r2 else "blue"
+    r2_sub = (
+        "[bold blink gold1]⭐ YOU ARE HERE[/bold blink gold1]"
+        if is_in_r2
+        else "[dim]Hostile Wilderness[/dim]"
+    )
+
+    r3_border = "gold1" if is_in_r3 else "blue"
+    r3_sub = (
+        "[bold blink gold1]⭐ YOU ARE HERE[/bold blink gold1]"
+        if is_in_r3
+        else "[dim]Imperial Citadel & Deep Void[/dim]"
+    )
+
+    # Draw ASCII maps
+    r1_map = draw_eldergrove_map(player_room_name)
+    r2_map = draw_whisperwood_map(player_room_name)
+    r3_map = draw_silverlight_shadowspire_map(
+        player_room_name, bridge_locked, throne_locked
+    )
+
+    # Print a beautiful header
+    console.print()
+    console.print(
+        Panel(
+            Text("🗺️  WORLD MAP OF AETHERIA  🗺️", style="bold gold1", justify="center"),
+            border_style="gold1",
+            box=DOUBLE,
+        )
+    )
+    console.print()
+
+    # Print Region 1 Panel
+    console.print(
+        Panel(
+            r1_map.strip("\n"),
+            title="[bold cyan]Region I: Eldergrove Village[/bold cyan]",
+            subtitle=r1_sub,
+            subtitle_align="right",
+            border_style=r1_border,
+            box=ROUNDED,
+        )
+    )
+    console.print()
+
+    # Print Region 2 Panel
+    console.print(
+        Panel(
+            r2_map.strip("\n"),
+            title="[bold green]Region II: Whisperwood Forest[/bold green]",
+            subtitle=r2_sub,
+            subtitle_align="right",
+            border_style=r2_border,
+            box=ROUNDED,
+        )
+    )
+    console.print()
+
+    # Print Region 3 Panel
+    console.print(
+        Panel(
+            r3_map.strip("\n"),
+            title="[bold purple]Region III: Silverlight Keep & Castle Shadowspire[/bold purple]",
+            subtitle=r3_sub,
+            subtitle_align="right",
+            border_style=r3_border,
+            box=ROUNDED,
+        )
+    )
+    console.print()
+
+    # Print Legend Panel
+    legend_text = (
+        "  [bold yellow]★[/bold yellow] : Your Current Location     "
+        "  [bold green]Room Name[/bold green] : Town / Safe Area     "
+        "  [bold red]Room Name[/bold red] : Danger / Dungeon Area\n"
+        "  [🔒 LOCKED] : Requires Special Sigil / Key to access"
+    )
+    console.print(
+        Panel(legend_text, title="ℹ️  Map Legend", border_style="cyan", box=ROUNDED)
+    )
+    console.print()
