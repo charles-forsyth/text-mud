@@ -4,11 +4,22 @@ from aetheria.entity import Enemy, Boss, deserialize_enemy
 
 
 class NPC:
-    def __init__(self, name: str, persona: str, dialogue_context: str = ""):
+    def __init__(
+        self,
+        name: str,
+        persona: str,
+        dialogue_context: str = "",
+        affinity: int = 0,
+        relationship_flags: Optional[List[str]] = None,
+    ):
         self.name = name
         self.persona = persona
         self.dialogue_context = dialogue_context
         self.dialogue_history: list[tuple[str, str]] = []
+        self.affinity = max(-100, min(100, affinity))
+        self.relationship_flags = (
+            relationship_flags if relationship_flags is not None else []
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -16,6 +27,8 @@ class NPC:
             "persona": self.persona,
             "dialogue_context": self.dialogue_context,
             "dialogue_history": self.dialogue_history,
+            "affinity": self.affinity,
+            "relationship_flags": self.relationship_flags,
         }
 
     @classmethod
@@ -24,6 +37,8 @@ class NPC:
             name=data["name"],
             persona=data["persona"],
             dialogue_context=data.get("dialogue_context", ""),
+            affinity=data.get("affinity", 0),
+            relationship_flags=data.get("relationship_flags", []),
         )
         # Convert any inner lists back to tuples
         history_list = data.get("dialogue_history", [])

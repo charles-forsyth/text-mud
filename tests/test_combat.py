@@ -42,13 +42,14 @@ class TestAetheriaCombat(unittest.TestCase):
 
     def test_entity_damage_mitigation(self):
         # Enemy base attack is 12, Player defense is 5
-        # Damaging player for 12 should deal 12 - 5 = 7 damage
+        # With hyperbolic curve and attacker_level=1, DR = 5 / (5 + 15) = 0.25
+        # Inflicted damage = round(12 * 0.75) = 9
         inflicted = self.player.take_damage(12)
-        self.assertEqual(inflicted, 7)
-        self.assertEqual(self.player.hp, 93)
+        self.assertEqual(inflicted, 9)
+        self.assertEqual(self.player.hp, 91)
 
     def test_entity_healing(self):
-        self.player.take_damage(30)  # HP = 75
+        self.player.hp = 75
         self.player.heal(20)
         self.assertEqual(self.player.hp, 95)
         self.player.heal(100)  # Should cap at max_hp (100)
@@ -64,7 +65,7 @@ class TestAetheriaCombat(unittest.TestCase):
         potion = Consumable(
             "Test Potion", "Restores HP and MP", value=10, hp_restore=15, mp_restore=10
         )
-        self.player.take_damage(30)  # hp becomes 75
+        self.player.hp = 75
         self.player.spend_mana(5)  # mp becomes 15
 
         self.player.inventory.append(potion)

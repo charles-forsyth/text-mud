@@ -9,8 +9,43 @@ from aetheria.entity import Player, Companion, Enemy
 from aetheria.world import Room
 from aetheria.quests import Quest
 
+import sys
+
 # Instantiate global rich console
 console = Console()
+
+
+class TerminalScreen:
+    """
+    A context manager that transitions the terminal into a full-screen alternate buffer.
+    Prevents scroll history pollution and provides flicker-free double-buffered redraws.
+    """
+
+    def __enter__(self):
+        # Enter alternate buffer (\033[?1049h), clear screen (\033[H\033[?25l)
+        sys.stdout.write("\033[?1049h\033[H\033[?25l")
+        sys.stdout.flush()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Restore normal buffer (\033[?1049l), show cursor (\033[?25h)
+        sys.stdout.write("\033[?25h\033[?1049l")
+        sys.stdout.flush()
+
+
+def clear_and_home_screen():
+    """Clears the screen in-place and homes the cursor position without scrolling."""
+    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.flush()
+
+
+def show_terminal_cursor(visible: bool):
+    """Enables or disables the cursor visibility."""
+    if visible:
+        sys.stdout.write("\033[?25h")
+    else:
+        sys.stdout.write("\033[?25l")
+    sys.stdout.flush()
 
 
 def render_title_screen():
@@ -602,6 +637,33 @@ def render_quests_log(quests: List[Quest]):
         )
 
     console.print(table)
+
+
+def render_action_log(message_log: List[str]):
+    """Renders a beautiful scrolling Action Log panel containing recent game history events."""
+    # Filter out empty lines
+    clean_lines = [line.strip() for line in message_log if line.strip()]
+    # Keep the last 10 lines to fit terminal nicely without overflowing
+    display_lines = clean_lines[-10:] if len(clean_lines) > 10 else clean_lines
+
+    # If the log is empty, display a placeholder to keep UI structured
+    if not display_lines:
+        display_lines = [
+            "[dim]The winds of Aetheria whisper. No recent actions...[/dim]"
+        ]
+
+    log_content = "\n".join(display_lines)
+
+    console.print(
+        Panel(
+            log_content,
+            title="⚡ [bold gold1]Recent Activity Log[/bold gold1]",
+            border_style="gold1",
+            box=ROUNDED,
+            expand=True,
+            padding=(0, 1),
+        )
+    )
 
 
 def render_quick_actions(actions: List[tuple]):

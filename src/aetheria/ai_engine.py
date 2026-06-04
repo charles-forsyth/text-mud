@@ -141,8 +141,10 @@ def generate_npc_dialogue(
     party_members: Optional[List[Tuple[str, str]]] = None,
     inventory_items: Optional[List[str]] = None,
     dialogue_history: Optional[List[Tuple[str, str]]] = None,
+    affinity: int = 0,
+    relationship_flags: Optional[List[str]] = None,
 ) -> str:
-    """Generates context-aware, in-character NPC responses using Gemini Pro with full awareness of companions, inventory, and history."""
+    """Generates context-aware, in-character NPC responses using Gemini Pro with awareness of companions, inventory, history, and relationship affinity."""
 
     history_str = ""
     if dialogue_history:
@@ -160,9 +162,23 @@ def generate_npc_dialogue(
     if inventory_items:
         inv_str = ", ".join(inventory_items)
 
+    flags_str = ", ".join(relationship_flags) if relationship_flags else "None"
+
+    # Define verbal tone descriptions based on numeric affinity thresholds
+    if affinity <= -50:
+        attitude = "Hostile, resentful, and aggressive. Speaks with intense irritation or cold silence."
+    elif affinity < 0:
+        attitude = "Suspicious, weary, and guarded. Speaks with formal distance and skepticism."
+    elif affinity >= 50:
+        attitude = "Extremely warm, trusting, and fiercely loyal. Addresses you as a close friend and trusted companion."
+    else:
+        attitude = "Neutral, professional, and businesslike. Polite but centered on the current situation."
+
     prompt = f"""
 You are {npc_name}, an NPC in a dark, rich, atmospheric text-based fantasy RPG game set in Aetheria.
 Your persona/background: {persona}
+
+Your current attitude toward the player: {attitude} (Affinity Score: {affinity}/100, Relationship Flags: {flags_str})
 
 A player is speaking to you.
 Player Details:
@@ -180,9 +196,13 @@ Current Quest Context in the World:
 
 The player says/asks about: "{topic}"
 
-Provide an immersive, atmospheric, in-character response. Keep it concise (1 to 4 sentences). 
-Speak directly in your unique voice. Do NOT include any meta-text, meta-tags, or markdown headers. Just your raw dialogue.
-If any companions are present, you are welcome to address them specifically (e.g. Lyra or Garrick) if appropriate or mention their class.
+INSTRUCTIONS:
+1. Provide an immersive, atmospheric, in-character response. Keep it concise (1 to 4 sentences). Speak directly in your unique voice. Do NOT include any meta-text, meta-tags, or markdown headers. Just your raw dialogue.
+2. Based on how the player is addressing you and what they say, determine if your affinity toward them should change or if a permanent memory tag is warranted.
+3. At the VERY END of your response, append an instruction tag if needed using this exact format (do not put quotes or spaces inside the tag):
+   - To shift sentiment: <sentiment_shift: +5> or <sentiment_shift: -10>
+   - To add a memory flag: <add_flag: insulted_family> or <add_flag: heroes_friend>
+   Only append ONE tag per interaction if a meaningful change occurs. Keep the verbal text separated from the tags.
 """
     response = call_gemini(prompt, temperature=0.8)
     if response:

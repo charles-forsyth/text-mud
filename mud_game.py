@@ -14,7 +14,8 @@ from aetheria.config import (
 from aetheria.models import Item, Equipment, Consumable
 from aetheria.entity import Player, Companion, Enemy
 from aetheria.world import build_default_world
-from aetheria.quests import get_default_quests
+from aetheria.quests import get_default_quests, QuestObserver
+from aetheria.events import EventDispatcher, EventType
 from aetheria.combat import CombatManager
 from aetheria.save_system import save_game, load_game
 from aetheria.tts import TTSManager
@@ -34,6 +35,10 @@ from aetheria.ui import (
     render_quests_log,
     render_quick_actions,
     render_world_map,
+    TerminalScreen,
+    clear_and_home_screen,
+    show_terminal_cursor,
+    render_action_log,
 )
 
 
@@ -91,6 +96,10 @@ class GameController:
         self._prewarm_queue = queue.Queue()
         self._prewarm_thread = None
         self._start_prewarm_worker_if_needed()
+
+        self.quests_observer = QuestObserver(self)
+        self.quests_observer.register_listeners()
+        self.message_log: list[str] = []
 
     def get_current_quick_actions(self) -> list[tuple[str, str]]:
         actions: list[tuple[str, str]] = []
@@ -236,6 +245,8 @@ class GameController:
             dynamic_description=dynamic_desc,
             world=self.world,
         )
+        render_action_log(self.message_log)
+
         TTSManager().speak(dynamic_desc, "Narrator")
 
         # Predictive prewarming of adjacent rooms' descriptions in background threads
@@ -333,33 +344,41 @@ class GameController:
         render_title_screen()
         self.character_creation()
 
-        console.print("\n[bold yellow]Welcome to Aetheria MUD, traveler![/bold yellow]")
-        console.print(
-            "Type [bold cyan]help[/bold cyan] or [bold cyan]l[/bold cyan] to see available commands."
-        )
+        with TerminalScreen():
+            # Initial look of starting room is done on the first loop tick
+            while self.is_running:
+                # Check passive events: combat trigger first
+                if (
+                    self.player.current_room.enemy
+                    and self.player.current_room.enemy.is_alive
+                ):
+                    self.enter_combat(self.player.current_room.enemy)
+                    if not self.is_running:
+                        break
+                    continue
 
-        # Inital look of starting room
-        self.render_current_room()
+                try:
+                    clear_and_home_screen()
+                    self.render_current_room()
+                    self.quick_actions = self.get_current_quick_actions()
+                    render_quick_actions(self.quick_actions)
 
-        while self.is_running:
-            # Check passive events: combat trigger first
-            if (
-                self.player.current_room.enemy
-                and self.player.current_room.enemy.is_alive
-            ):
-                self.enter_combat(self.player.current_room.enemy)
-                if not self.is_running:
-                    break
-                continue
+                    show_terminal_cursor(True)
+                    command = console.input("\n[bold green]>[/bold green] ")
+                    show_terminal_cursor(False)
 
-            try:
-                self.quick_actions = self.get_current_quick_actions()
-                render_quick_actions(self.quick_actions)
-                command = console.input("\n[bold green]>[/bold green] ")
-                self.process_command(command)
-            except (KeyboardInterrupt, EOFError):
-                self.is_running = False
-                console.print("\n[bold red]Goodbye, traveler![/bold red]")
+                    if self.is_heavy_command(command):
+                        self.process_command(command)
+                    else:
+                        with console.capture() as capture:
+                            self.process_command(command)
+                        captured_output = capture.get()
+                        if captured_output.strip():
+                            for line in captured_output.split("\n"):
+                                if line.strip():
+                                    self.message_log.append(line)
+                except (KeyboardInterrupt, EOFError):
+                    self.is_running = False
 
     def character_creation(self):
         """Asks the player for details to initialize their character."""
@@ -447,6 +466,29 @@ class GameController:
         # Set player spawn location
         self.player.current_room = self.world["Eldergrove Center"]
 
+    def is_heavy_command(self, command_str: str) -> bool:
+        parts = command_str.lower().split()
+        if not parts:
+            return False
+        verb = parts[0]
+        if verb.isdigit():
+            idx = int(verb) - 1
+            if hasattr(self, "quick_actions") and 0 <= idx < len(self.quick_actions):
+                _, actual_command = self.quick_actions[idx]
+                return self.is_heavy_command(actual_command)
+        return verb in [
+            "help",
+            "h",
+            "party",
+            "p",
+            "quests",
+            "q",
+            "inventory",
+            "i",
+            "map",
+            "m",
+        ]
+
     def process_command(self, command_str: str):
         parts = command_str.lower().split()
         if not parts:
@@ -473,7 +515,13 @@ class GameController:
             return
 
         elif verb in ["help", "h"]:
+            clear_and_home_screen()
             render_help_menu()
+            show_terminal_cursor(True)
+            console.input(
+                "\n[bold yellow]Press Enter to return to game...[/bold yellow]"
+            )
+            show_terminal_cursor(False)
 
         elif verb in ["look", "l"]:
             self.render_current_room()
@@ -502,16 +550,40 @@ class GameController:
             self.recruit_companion(noun)
 
         elif verb in ["party", "p"]:
+            clear_and_home_screen()
             render_full_party_hud(self.player, self.party)
+            show_terminal_cursor(True)
+            console.input(
+                "\n[bold yellow]Press Enter to return to game...[/bold yellow]"
+            )
+            show_terminal_cursor(False)
 
         elif verb in ["quests", "q"]:
+            clear_and_home_screen()
             render_quests_log(list(self.quests.values()))
+            show_terminal_cursor(True)
+            console.input(
+                "\n[bold yellow]Press Enter to return to game...[/bold yellow]"
+            )
+            show_terminal_cursor(False)
 
         elif verb in ["inventory", "i"]:
+            clear_and_home_screen()
             render_inventory_list(self.player)
+            show_terminal_cursor(True)
+            console.input(
+                "\n[bold yellow]Press Enter to return to game...[/bold yellow]"
+            )
+            show_terminal_cursor(False)
 
         elif verb in ["map", "m"]:
+            clear_and_home_screen()
             render_world_map(self.player.current_room.name, self.world)
+            show_terminal_cursor(True)
+            console.input(
+                "\n[bold yellow]Press Enter to return to game...[/bold yellow]"
+            )
+            show_terminal_cursor(False)
 
         elif verb == "save":
             self.handle_save()
@@ -548,8 +620,10 @@ class GameController:
                     f"[bold green]🔓 You unlock the {next_room.name} using the {next_room.key_needed.name}![/bold green]"
                 )
                 next_room.locked = False
-                # Update quests if unlocking is related to fetch items
-                self.update_quest_progress("fetch", next_room.key_needed.name)
+                # Dispatch event if unlocking is related to fetch items
+                EventDispatcher.dispatch(
+                    EventType.ITEM_ACQUIRED, {"item_name": next_room.key_needed.name}
+                )
             else:
                 req_str = (
                     f"You need the {next_room.key_needed.name}."
@@ -639,8 +713,10 @@ class GameController:
             f"[bold yellow]🎒 Picked up: {target_item.name}[/bold yellow] - {target_item.description}"
         )
 
-        # Check Quest Progress
-        self.update_quest_progress("fetch", target_item.name)
+        # Dispatch event for item acquired
+        EventDispatcher.dispatch(
+            EventType.ITEM_ACQUIRED, {"item_name": target_item.name}
+        )
 
     def use_item(self, item_name: str):
         target_item: Any = None
@@ -907,16 +983,52 @@ class GameController:
             inventory_items=inventory_items,
             quest_context=quest_context,
             dialogue_history=list(npc.dialogue_history),
+            affinity=getattr(npc, "affinity", 0),
+            relationship_flags=getattr(npc, "relationship_flags", []),
+        )
+
+        # Parse sentiment shift and flag tags from response
+        import re
+
+        clean_dialogue = dialogue
+
+        # 1. Parse sentiment shift tags: <sentiment_shift: +/-X>
+        shift_match = re.search(r"<sentiment_shift:\s*([+-]?\d+)>", dialogue)
+        if shift_match:
+            try:
+                shift_val = int(shift_match.group(1))
+                npc.affinity = max(
+                    -100, min(100, getattr(npc, "affinity", 0) + shift_val)
+                )
+                clean_dialogue = clean_dialogue.replace(shift_match.group(0), "")
+            except ValueError:
+                pass
+
+        # 2. Parse relationship memory flag tags: <add_flag: flag_name>
+        flag_match = re.search(r"<add_flag:\s*([a-zA-Z0-9_]+)>", dialogue)
+        if flag_match:
+            flag_val = flag_match.group(1)
+            if not hasattr(npc, "relationship_flags") or npc.relationship_flags is None:
+                npc.relationship_flags = []
+            if flag_val not in npc.relationship_flags:
+                npc.relationship_flags.append(flag_val)
+            clean_dialogue = clean_dialogue.replace(flag_match.group(0), "")
+
+        clean_dialogue = clean_dialogue.strip()
+
+        # Dispatch event for spoken NPC
+        EventDispatcher.dispatch(
+            EventType.NPC_SPOKEN, {"npc_name": npc.name, "topic": topic_sub}
         )
 
         # Append this exchange to history (limit to last 5 turns / 10 lines)
         npc.dialogue_history.append((self.player.name, topic_sub))
-        npc.dialogue_history.append((npc.name, dialogue))
+        npc.dialogue_history.append((npc.name, clean_dialogue))
         if len(npc.dialogue_history) > 10:
             npc.dialogue_history = npc.dialogue_history[-10:]
 
-        console.print(f"[bold cyan]{npc.name}[/bold cyan]: {dialogue}")
-        TTSManager().speak(dialogue, npc.name)
+        console.print(f"[bold cyan]{npc.name}[/bold cyan]: {clean_dialogue}")
+        TTSManager().speak(clean_dialogue, npc.name)
 
         # Quest Triggering and Complete checks (Special interactive NPCs)
         if npc.name == "Tavernkeeper Barnaby" and "quest" in topic_sub.lower():
@@ -1028,15 +1140,18 @@ class GameController:
         ]
 
         while combat.is_active:
+            clear_and_home_screen()
             render_combat_screen(self.player, self.party, enemy, round_log)
 
             # 1. Ask for player action
             console.print(
                 "\n[bold yellow]Actions:[/bold yellow] [bold white]1. Attack | 2. Spell | 3. Item | 4. Defend | 5. Flee[/bold white]"
             )
+            show_terminal_cursor(True)
             choice = (
                 console.input("Choose combat action (1-5 or Name): ").strip().lower()
             )
+            show_terminal_cursor(False)
 
             action = "attack"
             spell = None
@@ -1054,7 +1169,9 @@ class GameController:
                 for idx, s in enumerate(self.player.spells, 1):
                     console.print(f"{idx}. {s}")
 
+                show_terminal_cursor(True)
                 s_choice = console.input("Select Spell (Number or Name): ").strip()
+                show_terminal_cursor(False)
                 try:
                     s_idx = int(s_choice) - 1
                     if 0 <= s_idx < len(self.player.spells):
@@ -1090,7 +1207,10 @@ class GameController:
                 for idx, c in enumerate(consumables, 1):
                     console.print(f"{idx}. {c.name} - {c.description}")
 
+                show_terminal_cursor(True)
                 c_choice = console.input("Select Consumable (Number or Name): ").strip()
+                show_terminal_cursor(False)
+
                 try:
                     c_idx = int(c_choice) - 1
                     if 0 <= c_idx < len(consumables):
@@ -1154,7 +1274,9 @@ class GameController:
                 console.print(
                     f"\n🌟 [bold yellow]Loot Found: {sigil.name}[/bold yellow] - dropped by the defeated boss!"
                 )
-                self.update_quest_progress("fetch", sigil.name)
+                EventDispatcher.dispatch(
+                    EventType.ITEM_ACQUIRED, {"item_name": sigil.name}
+                )
 
             elif enemy.name == "Void Horror":
                 void_key = Item(
@@ -1167,7 +1289,9 @@ class GameController:
                 console.print(
                     f"\n🌟 [bold yellow]Loot Found: {void_key.name}[/bold yellow] - dropped by the horror!"
                 )
-                self.update_quest_progress("fetch", void_key.name)
+                EventDispatcher.dispatch(
+                    EventType.ITEM_ACQUIRED, {"item_name": void_key.name}
+                )
 
             elif enemy.name == "Archmage Malakor":
                 # Final Game Win trigger!
@@ -1192,10 +1316,16 @@ class GameController:
                 self.is_running = False
                 return
 
-            # Check quest kill conditions
-            self.update_quest_progress("kill", enemy.name)
+            # Dispatch event for enemy killed
+            EventDispatcher.dispatch(EventType.ENEMY_KILLED, {"enemy_name": enemy.name})
             # Nullify enemy in room
             self.player.current_room.enemy = None
+
+            show_terminal_cursor(True)
+            console.input(
+                "\n[bold yellow]Press Enter to return to exploration...[/bold yellow]"
+            )
+            show_terminal_cursor(False)
 
         elif not self.player.is_alive:
             self.handle_player_death()
@@ -1227,6 +1357,9 @@ class GameController:
         console.print(revive_msg)
         TTSManager().speak(f"{death_msg} You revive inside the sanctuary.", "Narrator")
         self.render_current_room()
+        show_terminal_cursor(True)
+        console.input("\n[bold yellow]Press Enter to continue...[/bold yellow]")
+        show_terminal_cursor(False)
 
     def trigger_quest_acceptance(self, quest_id: str):
         if quest_id not in self.quests:
