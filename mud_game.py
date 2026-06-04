@@ -744,23 +744,79 @@ class GameController:
                         console.print("[red]No such person here.[/red]")
                         return
         else:
-            # We expect syntax: talk to [npc] about [topic] or talk [npc] [topic]
+            # We expect syntax:
+            # 1. talk [npc] about [topic]
+            # 2. talk [npc] [topic] (e.g., from quick actions: talk Tavernkeeper Barnaby quest)
             # Clean target string
-            clean_arg = target_arg.replace("to ", "")
-            parts = clean_arg.split("about")
+            clean_arg = target_arg.replace("to ", "").strip()
 
-            npc_sub = parts[0].strip()
-            topic_sub = parts[1].strip() if len(parts) > 1 else "hello"
-
-            # Search for NPC in current room
             npc = None
-            for n in room.npcs:
-                if (
-                    n.name.lower().startswith(npc_sub.lower())
-                    or npc_sub.lower() in n.name.lower()
-                ):
-                    npc = n
-                    break
+            topic_sub = "hello"
+
+            # A. If "about" is present, split on it case-insensitively
+            if "about" in clean_arg.lower():
+                import re
+
+                parts = re.split(r"\babout\b", clean_arg, flags=re.IGNORECASE)
+                npc_sub = parts[0].strip()
+                topic_sub = parts[1].strip() if len(parts) > 1 else "hello"
+
+                # Match NPC based on npc_sub
+                for n in room.npcs:
+                    if (
+                        n.name.lower().startswith(npc_sub.lower())
+                        or npc_sub.lower() in n.name.lower()
+                    ):
+                        npc = n
+                        break
+            else:
+                # B. No "about" keyword (e.g. "talk Tavernkeeper Barnaby quest" or "talk Barnaby hello")
+                # Sort NPCs by name length descending to match longer names first
+                sorted_npcs = sorted(room.npcs, key=lambda x: len(x.name), reverse=True)
+
+                # 1. Try exact or full prefix match on NPC name
+                for n in sorted_npcs:
+                    n_name_l = n.name.lower()
+                    c_arg_l = clean_arg.lower()
+                    if c_arg_l == n_name_l:
+                        npc = n
+                        topic_sub = "hello"
+                        break
+                    elif c_arg_l.startswith(n_name_l + " "):
+                        npc = n
+                        topic_sub = clean_arg[len(n.name) :].strip()
+                        break
+
+                # 2. Try matching by sub-words of the NPC name (e.g. "Barnaby" in "Barnaby quest")
+                if not npc:
+                    for n in sorted_npcs:
+                        npc_words = [
+                            w.strip()
+                            for w in n.name.lower().split()
+                            if len(w.strip()) > 1
+                        ]
+                        for word in npc_words:
+                            if clean_arg.lower() == word:
+                                npc = n
+                                topic_sub = "hello"
+                                break
+                            elif clean_arg.lower().startswith(word + " "):
+                                npc = n
+                                topic_sub = clean_arg[len(word) :].strip()
+                                break
+                        if npc:
+                            break
+
+                # 3. Fallback: Entire clean_arg matches or is substring of NPC name
+                if not npc:
+                    for n in room.npcs:
+                        if (
+                            n.name.lower().startswith(clean_arg.lower())
+                            or clean_arg.lower() in n.name.lower()
+                        ):
+                            npc = n
+                            topic_sub = "hello"
+                            break
 
             if not npc:
                 console.print(
@@ -801,7 +857,7 @@ class GameController:
             party_members=party_members,
             inventory_items=inventory_items,
             quest_context=quest_context,
-            dialogue_history=npc.dialogue_history,
+            dialogue_history=list(npc.dialogue_history),
         )
 
         # Append this exchange to history (limit to last 5 turns / 10 lines)

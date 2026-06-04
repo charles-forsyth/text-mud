@@ -110,6 +110,77 @@ class TestDynamicMenu(unittest.TestCase):
             any("Barnaby" in action and "(Quest)" in action for action in action_names)
         )
 
+    def test_shorthand_npc_dialogue_parsing(self):
+        # Place player in the tavern
+        self.game.player.current_room = self.game.world[
+            "Eldergrove Tavern (The Golden Oak)"
+        ]
+
+        # Mock generate_npc_dialogue to see what is passed
+        from unittest.mock import patch
+
+        with patch("mud_game.generate_npc_dialogue") as mock_generate:
+            mock_generate.return_value = "Mocked Response"
+
+            # Test 1: Classical "talk Tavernkeeper Barnaby about quest"
+            self.game.talk_to_npc("Tavernkeeper Barnaby about quest")
+            mock_generate.assert_called_with(
+                npc_name="Tavernkeeper Barnaby",
+                persona=self.game.player.current_room.npcs[0].persona,
+                topic="quest",
+                player_name="TestHero",
+                player_class="Warrior",
+                player_level=1,
+                player_hp=100,
+                player_max_hp=100,
+                party_members=[],
+                inventory_items=[],
+                quest_context="No major events.",
+                dialogue_history=[],
+            )
+
+            # Test 2: Shorthand "Tavernkeeper Barnaby quest" (no "about" keyword)
+            self.game.talk_to_npc("Tavernkeeper Barnaby quest")
+            mock_generate.assert_called_with(
+                npc_name="Tavernkeeper Barnaby",
+                persona=self.game.player.current_room.npcs[0].persona,
+                topic="quest",
+                player_name="TestHero",
+                player_class="Warrior",
+                player_level=1,
+                player_hp=100,
+                player_max_hp=100,
+                party_members=[],
+                inventory_items=[],
+                quest_context="Forest Cleanse",
+                dialogue_history=[
+                    ("TestHero", "quest"),
+                    ("Tavernkeeper Barnaby", "Mocked Response"),
+                ],
+            )
+
+            # Test 3: Shorthand with just partial name "Barnaby hello"
+            self.game.talk_to_npc("Barnaby hello")
+            mock_generate.assert_called_with(
+                npc_name="Tavernkeeper Barnaby",
+                persona=self.game.player.current_room.npcs[0].persona,
+                topic="hello",
+                player_name="TestHero",
+                player_class="Warrior",
+                player_level=1,
+                player_hp=100,
+                player_max_hp=100,
+                party_members=[],
+                inventory_items=[],
+                quest_context="Forest Cleanse",
+                dialogue_history=[
+                    ("TestHero", "quest"),
+                    ("Tavernkeeper Barnaby", "Mocked Response"),
+                    ("TestHero", "quest"),
+                    ("Tavernkeeper Barnaby", "Mocked Response"),
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
