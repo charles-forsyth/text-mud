@@ -262,6 +262,7 @@ def get_region_map_panel(room: Room, world: Optional[dict] = None) -> Optional[P
 
 _PREV_STATS: dict[str, int] = {}
 _PREV_COMBAT_STATS: dict[str, int] = {}
+_STAT_CHANGES_INDICATORS: dict[str, str] = {}
 _LAST_REVEALED_ROOM: Optional[str] = None
 
 
@@ -366,6 +367,43 @@ def get_combined_actions_and_help_panel(
     )
 
 
+def _trigger_screen_shake_effect(layout_renderable) -> None:
+    """
+    Captures the layout frame as a string using console.capture()
+    and prints it with horizontal/vertical offsets over 4 frames
+    to simulate a physical screen shake.
+    """
+    import time
+    from rich.console import Console
+
+    shake_console = Console(width=console.width, height=console.height)
+    with shake_console.capture() as capture:
+        shake_console.print(layout_renderable)
+
+    frame_text = capture.get()
+    lines = frame_text.splitlines()
+
+    # Offsets for 4 frames: (dx, dy)
+    offsets = [(2, 1), (-2, 0), (1, -1), (0, 0)]
+    for dx, dy in offsets:
+        clear_and_home_screen()
+        # Print vertical offset
+        if dy > 0:
+            sys.stdout.write("\n" * dy)
+
+        # Print each line with horizontal offset dx
+        for line in lines:
+            if dx > 0:
+                sys.stdout.write(" " * dx + line + "\n")
+            elif dx < 0:
+                sys.stdout.write(line[abs(dx) :] + "\n")
+            else:
+                sys.stdout.write(line + "\n")
+
+        sys.stdout.flush()
+        time.sleep(0.05)
+
+
 def _print_layout_frame(
     room: Room,
     party: List[Companion],
@@ -386,54 +424,46 @@ def _print_layout_frame(
     desc = dynamic_description if dynamic_description else room.description
     room_details.append(f"[italic]{desc}[/italic]\n")
 
-    # Display Weather and Clock
-    weather_clock_details = []
+    # Group environmental status (Clock, Weather, Exits) into a single compact line
+    env_parts = []
     if world_clock:
-        weather_clock_details.append(
-            f"⏳ [bold gold1]Time of Day:[/bold gold1] [bold yellow]{world_clock.current_time}[/bold yellow]"
-        )
+        env_parts.append(f"⏳ [bold yellow]{world_clock.current_time}[/bold yellow]")
     if weather_engine:
         c_state = weather_engine.current_state
-        weather_clock_details.append(
-            f"🌦️ [bold gold1]Weather:[/bold gold1] [{c_state.visual_style}]{c_state.name}[/{c_state.visual_style}]"
+        env_parts.append(
+            f"🌦️  [{c_state.visual_style}]{c_state.name}[/{c_state.visual_style}]"
         )
-    if weather_clock_details:
-        room_details.append(" | ".join(weather_clock_details) + "\n")
 
-    # Display items
-    if room.items:
-        items_str = ", ".join(
-            f"[bold yellow]{item.name}[/bold yellow]" for item in room.items
-        )
-        room_details.append(
-            f"📦 [bold gold1]Loot on the floor:[/bold gold1] {items_str}"
-        )
-    else:
-        room_details.append("[dim]No items lying around here.[/dim]")
+    exits_str = ", ".join(
+        f"[bold green]{direction}[/bold green]" for direction in room.exits.keys()
+    )
+    env_parts.append(f"🚪 Exits: {exits_str if exits_str else '[dim]None[/dim]'}")
 
-    # Display NPCs
+    room_details.append("  •  ".join(env_parts))
+
+    # Group presence status (NPCs, Enemy, Loot) into a single compact line
+    pres_parts = []
     if room.npcs:
         npcs_str = ", ".join(f"[bold cyan]{npc.name}[/bold cyan]" for npc in room.npcs)
-        room_details.append(f"👤 [bold cyan]Characters present:[/bold cyan] {npcs_str}")
-
-    # Display Enemy
+        pres_parts.append(f"👤 NPCs: {npcs_str}")
     if room.enemy:
         enemy_status = (
             f"([red]{room.enemy.hp}/{room.enemy.max_hp} HP[/red])"
             if room.enemy.is_alive
             else "([bold dim]Defeated[/bold dim])"
         )
-        room_details.append(
-            f"💀 [bold red]Hostile entity detected:[/bold red] [bold yellow]{room.enemy.name}[/bold yellow] Level {room.enemy.level} {enemy_status}"
+        pres_parts.append(
+            f"💀 [bold red]{room.enemy.name}[/bold red] Lvl {room.enemy.level} {enemy_status}"
         )
+    if room.items:
+        items_str = ", ".join(
+            f"[bold yellow]{item.name}[/bold yellow]" for item in room.items
+        )
+        pres_parts.append(f"📦 Loot: {items_str}")
+    else:
+        pres_parts.append("📦 Loot: [dim]None[/dim]")
 
-    # Display Exits
-    exits_str = ", ".join(
-        f"[bold green]{direction}[/bold green]" for direction in room.exits.keys()
-    )
-    room_details.append(
-        f"🚪 [bold green]Exits:[/bold green] {exits_str if exits_str else '[dim]None[/dim]'}"
-    )
+    room_details.append("  •  ".join(pres_parts))
 
     if message_log is not None:
         # PREMIUM UI/UX TUI DASHBOARD RENDER PATH
@@ -452,10 +482,21 @@ def _print_layout_frame(
         party_panel_content = Table.grid(expand=True)
         party_panel_content.add_column()
 
-        # Player stats
-        p_hp_bar = render_stat_progress_bar("HP", player.hp, player.max_hp, width=12)
+        # Player stats with floating indicators
+        p_hp_bar = render_stat_progress_bar(
+            "HP",
+            player.hp,
+            player.max_hp,
+            width=12,
+            suffix=_STAT_CHANGES_INDICATORS.get("player_hp", ""),
+        )
         p_mp_bar = render_stat_progress_bar(
-            "MP", player.mana, player.max_mana, width=12, color_scheme="mana"
+            "MP",
+            player.mana,
+            player.max_mana,
+            width=12,
+            color_scheme="mana",
+            suffix=_STAT_CHANGES_INDICATORS.get("player_mana", ""),
         )
         p_xp_bar = render_stat_progress_bar(
             "XP",
@@ -463,6 +504,7 @@ def _print_layout_frame(
             player.xp_to_next_level(),
             width=12,
             color_scheme="xp",
+            suffix=_STAT_CHANGES_INDICATORS.get("player_xp", ""),
         )
 
         player_info = Text.assemble(
@@ -490,9 +532,20 @@ def _print_layout_frame(
                     if c.is_alive
                     else " [bold dim red]DEAD[/bold dim red]"
                 )
-                c_hp_bar = render_stat_progress_bar("HP", c.hp, c.max_hp, width=12)
+                c_hp_bar = render_stat_progress_bar(
+                    "HP",
+                    c.hp,
+                    c.max_hp,
+                    width=12,
+                    suffix=_STAT_CHANGES_INDICATORS.get(f"comp_{c.name}_hp", ""),
+                )
                 c_mp_bar = render_stat_progress_bar(
-                    "MP", c.mana, c.max_mana, width=12, color_scheme="mana"
+                    "MP",
+                    c.mana,
+                    c.max_mana,
+                    width=12,
+                    color_scheme="mana",
+                    suffix=_STAT_CHANGES_INDICATORS.get(f"comp_{c.name}_mana", ""),
                 )
                 comp_info = Text.assemble(
                     Text(f"👥 {c.name} ", style="bold cyan"),
@@ -574,7 +627,18 @@ def _print_layout_frame(
             else:
                 layout["body"]["right_column"]["map_views"].update(region_map_panel)
 
-        console.print(layout)
+        # Support physical terminal shake animations
+        import os
+
+        is_interactive = (
+            sys.stdin.isatty()
+            and sys.stdout.isatty()
+            and "PYTEST_CURRENT_TEST" not in os.environ
+        )
+        if is_impacted and is_interactive:
+            _trigger_screen_shake_effect(layout)
+        else:
+            console.print(layout)
 
         # Trigger dashboard bypass for sequential activity renderer
         global DASHBOARD_RENDERED
@@ -629,7 +693,7 @@ def render_room_panel(
     current_input: str = "",
 ):
     """Renders visual layout of the player's current location with automatic, non-blocking stats animations."""
-    global _PREV_STATS, _LAST_REVEALED_ROOM
+    global _PREV_STATS, _LAST_REVEALED_ROOM, _STAT_CHANGES_INDICATORS
 
     current_stats = {
         "player_hp": player.hp,
@@ -640,13 +704,40 @@ def render_room_panel(
         current_stats[f"comp_{comp.name}_hp"] = comp.hp
         current_stats[f"comp_{comp.name}_mana"] = comp.mana
 
-    # Detect any changes
+    # Detect any changes and populate floating indicators
     has_changes = False
+    _STAT_CHANGES_INDICATORS = {}
     if _PREV_STATS:
         for k, v in current_stats.items():
-            if _PREV_STATS.get(k, v) != v:
+            prev_v = _PREV_STATS.get(k, v)
+            if prev_v != v:
                 has_changes = True
-                break
+                diff = v - prev_v
+                if "hp" in k:
+                    if diff > 0:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold green]+{diff} HP[/bold green]"
+                        )
+                    else:
+                        _STAT_CHANGES_INDICATORS[k] = f" [bold red]{diff} HP[/bold red]"
+                elif "mana" in k:
+                    if diff > 0:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold cyan]+{diff} MP[/bold cyan]"
+                        )
+                    else:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold purple]{diff} MP[/bold purple]"
+                        )
+                elif "xp" in k:
+                    if diff > 0:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold yellow]+{diff} XP[/bold yellow]"
+                        )
+                    else:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold yellow]{diff} XP[/bold yellow]"
+                        )
 
     import os
     import sys
@@ -663,16 +754,12 @@ def render_room_panel(
         full_desc = dynamic_description if dynamic_description else room.description
         import time
 
-        words = full_desc.split(" ")
-        total_steps = 5
-        step_size = max(1, len(words) // total_steps)
-        for step in range(1, total_steps + 1):
-            limit = min(step * step_size, len(words))
-            if step == total_steps:
-                limit = len(words)
-            partial_desc = " ".join(words[:limit])
-            if limit < len(words):
-                partial_desc += " █"
+        chunk_size = 4
+        total_chars = len(full_desc)
+        for idx in range(0, total_chars + 1, chunk_size):
+            partial_desc = full_desc[:idx]
+            if idx < total_chars:
+                partial_desc += "█"
             clear_and_home_screen()
             _print_layout_frame(
                 room,
@@ -687,7 +774,7 @@ def render_room_panel(
                 quick_actions=quick_actions,
                 current_input=current_input,
             )
-            time.sleep(0.01)
+            time.sleep(0.005)
 
     if has_changes and is_interactive and message_log is not None:
         # Interpolate frame states over 3 frames for a snappier transition
@@ -762,6 +849,8 @@ def render_room_panel(
         quick_actions,
         current_input=current_input,
     )
+    # Clear stat indicators after final static print to avoid persisting
+    _STAT_CHANGES_INDICATORS = {}
 
 
 def render_mini_party_hud(player: Player, party: List[Companion]):
@@ -821,13 +910,29 @@ def _print_combat_dashboard_frame(
     party_table = Table.grid(expand=True)
     party_table.add_column()
 
-    # Player HP, MP, XP
-    p_hp_bar = render_stat_progress_bar("HP", player.hp, player.max_hp, width=15)
+    # Player HP, MP, XP with floating indicators
+    p_hp_bar = render_stat_progress_bar(
+        "HP",
+        player.hp,
+        player.max_hp,
+        width=15,
+        suffix=_STAT_CHANGES_INDICATORS.get("player_hp", ""),
+    )
     p_mp_bar = render_stat_progress_bar(
-        "MP", player.mana, player.max_mana, width=15, color_scheme="mana"
+        "MP",
+        player.mana,
+        player.max_mana,
+        width=15,
+        color_scheme="mana",
+        suffix=_STAT_CHANGES_INDICATORS.get("player_mana", ""),
     )
     p_xp_bar = render_stat_progress_bar(
-        "XP", player.xp, player.xp_to_next_level(), width=15, color_scheme="xp"
+        "XP",
+        player.xp,
+        player.xp_to_next_level(),
+        width=15,
+        color_scheme="xp",
+        suffix=_STAT_CHANGES_INDICATORS.get("player_xp", ""),
     )
 
     party_table.add_row(
@@ -842,16 +947,27 @@ def _print_combat_dashboard_frame(
     party_table.add_row(p_xp_bar)
     party_table.add_row("")
 
-    # Companions
+    # Companions with floating indicators
     for comp in party:
         c_status = (
             " [bold green]ALIVE[/bold green]"
             if comp.is_alive
             else " [bold dim red]DEAD[/bold dim red]"
         )
-        c_hp_bar = render_stat_progress_bar("HP", comp.hp, comp.max_hp, width=12)
+        c_hp_bar = render_stat_progress_bar(
+            "HP",
+            comp.hp,
+            comp.max_hp,
+            width=12,
+            suffix=_STAT_CHANGES_INDICATORS.get(f"comp_{comp.name}_hp", ""),
+        )
         c_mp_bar = render_stat_progress_bar(
-            "MP", comp.mana, comp.max_mana, width=12, color_scheme="mana"
+            "MP",
+            comp.mana,
+            comp.max_mana,
+            width=12,
+            color_scheme="mana",
+            suffix=_STAT_CHANGES_INDICATORS.get(f"comp_{comp.name}_mana", ""),
         )
         party_table.add_row(
             Text.assemble(
@@ -873,11 +989,17 @@ def _print_combat_dashboard_frame(
         expand=True,
     )
 
-    # 2. Build Enemy Status Panel
+    # 2. Build Enemy Status Panel with floating indicator
     enemy_table = Table.grid(expand=True)
     enemy_table.add_column()
 
-    e_hp_bar = render_stat_progress_bar("HP", enemy.hp, enemy.max_hp, width=15)
+    e_hp_bar = render_stat_progress_bar(
+        "HP",
+        enemy.hp,
+        enemy.max_hp,
+        width=15,
+        suffix=_STAT_CHANGES_INDICATORS.get("enemy_hp", ""),
+    )
     enemy_table.add_row(
         Text.assemble(
             Text("💀 ", style="bold red"),
@@ -938,7 +1060,17 @@ def _print_combat_dashboard_frame(
         header_title=f"⚔️ {player.name} vs {enemy.name} ⚔️",
     )
 
-    console.print(layout)
+    import os
+
+    is_interactive = (
+        sys.stdin.isatty()
+        and sys.stdout.isatty()
+        and "PYTEST_CURRENT_TEST" not in os.environ
+    )
+    if is_player_impacted and is_interactive:
+        _trigger_screen_shake_effect(layout)
+    else:
+        console.print(layout)
 
 
 def render_combat_screen(
@@ -951,7 +1083,7 @@ def render_combat_screen(
     is_enemy_impacted: bool = False,
 ):
     """Displays structured, animated layout for ongoing battles."""
-    global _PREV_COMBAT_STATS
+    global _PREV_COMBAT_STATS, _STAT_CHANGES_INDICATORS
 
     current_stats = {
         "player_hp": player.hp,
@@ -962,13 +1094,31 @@ def render_combat_screen(
         current_stats[f"comp_{comp.name}_hp"] = comp.hp
         current_stats[f"comp_{comp.name}_mana"] = comp.mana
 
-    # Detect stats changes
+    # Detect stats changes and populate floating indicators
     has_changes = False
+    _STAT_CHANGES_INDICATORS = {}
     if _PREV_COMBAT_STATS:
         for k, v in current_stats.items():
-            if _PREV_COMBAT_STATS.get(k, v) != v:
+            prev_v = _PREV_COMBAT_STATS.get(k, v)
+            if prev_v != v:
                 has_changes = True
-                break
+                diff = v - prev_v
+                if "hp" in k:
+                    if diff > 0:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold green]+{diff} HP[/bold green]"
+                        )
+                    else:
+                        _STAT_CHANGES_INDICATORS[k] = f" [bold red]{diff} HP[/bold red]"
+                elif "mana" in k:
+                    if diff > 0:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold cyan]+{diff} MP[/bold cyan]"
+                        )
+                    else:
+                        _STAT_CHANGES_INDICATORS[k] = (
+                            f" [bold purple]{diff} MP[/bold purple]"
+                        )
 
     import os
     import sys
@@ -1044,6 +1194,8 @@ def render_combat_screen(
         is_player_impacted=is_player_impacted,
         is_enemy_impacted=is_enemy_impacted,
     )
+    # Clear stat indicators after final static print to avoid persisting
+    _STAT_CHANGES_INDICATORS = {}
 
 
 def render_full_party_hud(player: Player, party: List[Companion]):
