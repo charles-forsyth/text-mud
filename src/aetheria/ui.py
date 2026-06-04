@@ -185,13 +185,108 @@ def get_minimap_panel(room: Room) -> Panel:
     )
 
 
+def get_region_map_panel(room: Room, world: Optional[dict] = None) -> Optional[Panel]:
+    """Returns a beautiful Rich Panel containing the ASCII map for the current region."""
+    name = room.name
+
+    # Region definitions
+    region1_rooms = [
+        "Eldergrove Center",
+        "Eldergrove Tavern (The Golden Oak)",
+        "Eldergrove Blacksmith (Iron & Ash)",
+        "Eldergrove Temple (Aether Sanctuary)",
+    ]
+    region2_rooms = [
+        "Whisperwood Entrance",
+        "Goblin Outpost",
+        "Whispering Glade",
+        "Ancient Oak Cave",
+    ]
+    region3_rooms = [
+        "Silverlight Bridge",
+        "Silverlight Keep Square",
+        "Silverlight Royal Armory",
+        "Shadowspire Gates",
+        "Shadowspire Courtyard",
+        "Alchemical Laboratory",
+        "Shadow Throne Room",
+    ]
+
+    is_in_r1 = name in region1_rooms
+    is_in_r2 = name in region2_rooms
+    is_in_r3 = name in region3_rooms
+
+    if not (is_in_r1 or is_in_r2 or is_in_r3):
+        return None
+
+    # Determine locks
+    bridge_locked = True
+    throne_locked = True
+    if world:
+        if "Silverlight Bridge" in world:
+            bridge_locked = world["Silverlight Bridge"].locked
+        if "Shadow Throne Room" in world:
+            throne_locked = world["Shadow Throne Room"].locked
+    else:
+        # Traverse exits to locate bridge or throne if possible
+        visited = set()
+        queue = [room]
+        found_bridge = False
+        found_throne = False
+        while queue:
+            curr = queue.pop(0)
+            if curr.name in visited:
+                continue
+            visited.add(curr.name)
+            if curr.name == "Silverlight Bridge":
+                bridge_locked = curr.locked
+                found_bridge = True
+            if curr.name == "Shadow Throne Room":
+                throne_locked = curr.locked
+                found_throne = True
+            if found_bridge and found_throne:
+                break
+            for adj in curr.exits.values():
+                if adj and adj.name not in visited:
+                    queue.append(adj)
+
+    # Render regional maps
+    if is_in_r1:
+        map_content = draw_eldergrove_map(name)
+        title = "🗺️  [bold cyan]Region I: Eldergrove Village[/bold cyan]"
+        border_color = "cyan"
+        subtitle = "[bold gold1]★ YOU ARE HERE[/bold gold1]"
+    elif is_in_r2:
+        map_content = draw_whisperwood_map(name)
+        title = "🗺️  [bold green]Region II: Whisperwood Forest[/bold green]"
+        border_color = "green"
+        subtitle = "[bold gold1]★ YOU ARE HERE[/bold gold1]"
+    else:
+        map_content = draw_silverlight_shadowspire_map(
+            name, bridge_locked, throne_locked
+        )
+        title = "🗺️  [bold purple]Region III: Silverlight Keep & Castle Shadowspire[/bold purple]"
+        border_color = "purple"
+        subtitle = "[bold gold1]★ YOU ARE HERE[/bold gold1]"
+
+    return Panel(
+        map_content.strip("\n"),
+        title=title,
+        subtitle=subtitle,
+        subtitle_align="right",
+        border_style=border_color,
+        box=ROUNDED,
+    )
+
+
 def render_room_panel(
     room: Room,
     party: List[Companion],
     player: Player,
     dynamic_description: Optional[str] = None,
+    world: Optional[dict] = None,
 ):
-    """Renders a beautiful visual layout of the player's current location with a local minimap."""
+    """Renders a beautiful visual layout of the player's current location with regional and local maps."""
     header_style = "bold bright_green" if room.is_town else "bold deep_pink4"
     box_header = f"✨ {room.name}" if room.is_town else f"🌋 {room.name} (Hostile Area)"
 
@@ -233,6 +328,12 @@ def render_room_panel(
     room_details.append(
         f"🚪 [bold green]Exits:[/bold green] {exits_str if exits_str else '[dim]None[/dim]'}"
     )
+
+    # Render Regional Map Panel first (always updates and is shown at the top of the interface)
+    region_map_panel = get_region_map_panel(room, world)
+    if region_map_panel:
+        console.print(region_map_panel)
+        console.print()
 
     # Create side-by-side Table layout
     layout_table = Table.grid(expand=True)
