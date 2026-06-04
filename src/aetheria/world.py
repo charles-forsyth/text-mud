@@ -42,6 +42,7 @@ class Room:
         self.npcs: List[NPC] = []
         self.locked: bool = False
         self.key_needed: Optional[Item] = None
+        self._saved_exits_map: Dict[str, str] = {}
 
     def add_exit(self, direction: str, room: "Room"):
         self.exits[direction] = room
@@ -60,6 +61,9 @@ class Room:
             "items": [item.to_dict() for item in self.items],
             "enemy": (self.enemy.to_dict() if self.enemy else None),
             "npcs": [npc.to_dict() for npc in self.npcs],
+            "exits": {
+                dir_: target.name for dir_, target in self.exits.items() if target
+            },
         }
 
     @classmethod
@@ -82,6 +86,7 @@ class Room:
             room.enemy = deserialize_enemy(enemy_data)
 
         room.npcs = [NPC.from_dict(n) for n in data.get("npcs", [])]
+        room._saved_exits_map = data.get("exits", {})
         return room
 
 

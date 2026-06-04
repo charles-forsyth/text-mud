@@ -120,14 +120,21 @@ def load_game(
     for rname, r_data in state["rooms"].items():
         loaded_world[rname] = Room.from_dict(r_data)
 
-    # Re-establish exit graph connections using the default world structure!
-    # Because exit references were parsed by room name, we link rooms back together.
+    # Re-establish exit graph connections dynamically!
+    # Uses the serialized dynamic map if present, or falls back to static default world.
     for rname, room in loaded_world.items():
-        if rname in default_world:
-            for direction, target_room_default in default_world[rname].exits.items():
-                if target_room_default.name in loaded_world:
-                    # Link to the newly loaded room instance, preserving updated locks/items/enemies!
-                    room.add_exit(direction, loaded_world[target_room_default.name])
+        saved_exits = getattr(room, "_saved_exits_map", {})
+        if saved_exits:
+            for direction, target_name in saved_exits.items():
+                if target_name in loaded_world:
+                    room.add_exit(direction, loaded_world[target_name])
+        else:
+            if rname in default_world:
+                for direction, target_room_default in default_world[
+                    rname
+                ].exits.items():
+                    if target_room_default.name in loaded_world:
+                        room.add_exit(direction, loaded_world[target_room_default.name])
 
     # Re-link Player current_room reference
     if loaded_room_name in loaded_world:
