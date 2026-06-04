@@ -60,6 +60,20 @@ class TestAetheriaWorld(unittest.TestCase):
 
         self.assertFalse(bridge.locked)
 
+    def test_render_world_map_all_rooms(self):
+        from aetheria.ui import render_world_map
+        import io
+        from unittest.mock import patch
+
+        # Redirect stdout to avoid messing up unit test output logs
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            for room_name in self.world.keys():
+                render_world_map(room_name, self.world)
+                output = fake_out.getvalue()
+                self.assertIsNotNone(output)
+                # Verify standard elements like our header or legend are present
+                self.assertIn("WORLD MAP OF AETHERIA", output)
+
 
 if __name__ == "__main__":
     unittest.main()

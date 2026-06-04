@@ -33,6 +33,7 @@ from aetheria.ui import (
     render_inventory_list,
     render_quests_log,
     render_quick_actions,
+    render_world_map,
 )
 
 
@@ -168,6 +169,7 @@ class GameController:
         actions.append(("🎒 View Inventory", "inventory"))
         actions.append(("👥 View Party HUD", "party"))
         actions.append(("📜 View Quest Log", "quests"))
+        actions.append(("🗺️ Show World Map", "map"))
         actions.append(("💾 Save Progress", "save"))
         actions.append(("❓ Help Menu", "help"))
 
@@ -463,6 +465,9 @@ class GameController:
 
         elif verb in ["inventory", "i"]:
             render_inventory_list(self.player)
+
+        elif verb in ["map", "m"]:
+            render_world_map(self.player.current_room.name, self.world)
 
         elif verb == "save":
             self.handle_save()
