@@ -4,7 +4,7 @@ from rich.table import Table
 from rich.columns import Columns
 from rich.text import Text
 from rich.box import ROUNDED, DOUBLE
-from typing import List, Optional
+from typing import Any, List, Optional
 from aetheria.entity import Player, Companion, Enemy
 from aetheria.world import Room
 from aetheria.quests import Quest
@@ -320,6 +320,8 @@ def render_room_panel(
     player: Player,
     dynamic_description: Optional[str] = None,
     world: Optional[dict] = None,
+    weather_engine: Optional[Any] = None,
+    world_clock: Optional[Any] = None,
 ):
     """Renders a beautiful visual layout of the player's current location with regional and local maps."""
     header_style = "bold bright_green" if room.is_town else "bold deep_pink4"
@@ -328,6 +330,20 @@ def render_room_panel(
     room_details = []
     desc = dynamic_description if dynamic_description else room.description
     room_details.append(f"[italic]{desc}[/italic]\n")
+
+    # Display Weather and Clock
+    weather_clock_details = []
+    if world_clock:
+        weather_clock_details.append(
+            f"⏳ [bold gold1]Time of Day:[/bold gold1] [bold yellow]{world_clock.current_time}[/bold yellow]"
+        )
+    if weather_engine:
+        c_state = weather_engine.current_state
+        weather_clock_details.append(
+            f"🌦️ [bold gold1]Weather:[/bold gold1] [{c_state.visual_style}]{c_state.name}[/{c_state.visual_style}]"
+        )
+    if weather_clock_details:
+        room_details.append(" | ".join(weather_clock_details) + "\n")
 
     # Display items
     if room.items:

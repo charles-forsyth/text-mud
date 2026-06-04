@@ -9,7 +9,7 @@ DEFAULT_AI_MODEL = "gemini-3.1-pro"  # User preferred model
 
 # Save File Path
 SAVE_FILE_NAME = "savegame_aetheria.json"
-SAVE_SCHEMA_VERSION = 2
+SAVE_SCHEMA_VERSION = 3
 
 
 # Gameplay Settings

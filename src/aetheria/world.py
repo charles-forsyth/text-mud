@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from aetheria.models import Item, deserialize_item, Equipment, EquipmentSlot, Consumable
 from aetheria.entity import Enemy, Boss, deserialize_enemy
 
@@ -57,6 +57,7 @@ class Room:
         self.npcs: List[NPC] = []
         self.locked: bool = False
         self.key_needed: Optional[Item] = None
+        self.hazard: Optional[Any] = None
         self._saved_exits_map: Dict[str, str] = {}
 
     def add_exit(self, direction: str, room: "Room"):
@@ -76,6 +77,14 @@ class Room:
             "items": [item.to_dict() for item in self.items],
             "enemy": (self.enemy.to_dict() if self.enemy else None),
             "npcs": [npc.to_dict() for npc in self.npcs],
+            "hazard": {
+                "hazard_type": self.hazard.hazard_type,
+                "damage_per_tick": self.hazard.damage_per_tick,
+                "description": self.hazard.description,
+                "mitigation_item": self.hazard.mitigation_item,
+            }
+            if self.hazard
+            else None,
             "exits": {
                 dir_: target.name for dir_, target in self.exits.items() if target
             },
@@ -101,6 +110,18 @@ class Room:
             room.enemy = deserialize_enemy(enemy_data)
 
         room.npcs = [NPC.from_dict(n) for n in data.get("npcs", [])]
+
+        haz_data = data.get("hazard")
+        if haz_data:
+            from aetheria.weather import EnvironmentalHazard
+
+            room.hazard = EnvironmentalHazard(
+                hazard_type=haz_data["hazard_type"],
+                damage_per_tick=haz_data["damage_per_tick"],
+                description=haz_data["description"],
+                mitigation_item=haz_data.get("mitigation_item"),
+            )
+
         room._saved_exits_map = data.get("exits", {})
         return room
 
@@ -391,6 +412,22 @@ def build_default_world() -> Dict[str, Room]:
         "A heavy dark metal key humming with void energy.",
         value=0,
         is_quest_item=True,
+    )
+
+    # Set up environmental hazards on specific rooms
+    from aetheria.weather import EnvironmentalHazard
+
+    spire_laboratory.hazard = EnvironmentalHazard(
+        hazard_type="Acidic Acid Fumes",
+        damage_per_tick=8,
+        description="Corrosive acidic gas fills the chamber",
+        mitigation_item="Steel Plate",
+    )
+    forest_entrance.hazard = EnvironmentalHazard(
+        hazard_type="Poison Vines",
+        damage_per_tick=3,
+        description="Thorny, venomous briars slash at your ankles",
+        mitigation_item="Leather Jerkin",
     )
 
     # Make Void Horror drop the Void Key (we will write custom enemy-drop logic in the game loops)

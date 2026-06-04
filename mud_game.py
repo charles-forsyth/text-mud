@@ -101,6 +101,48 @@ class GameController:
         self.quests_observer.register_listeners()
         self.message_log: list[str] = []
 
+        # Initialize weather engine, clock, and scheduled NPCs for Phase 3
+        from aetheria.weather import WeatherEngine
+        from aetheria.navigation import LivingWorldClock, ScheduledNPC
+
+        self.weather_engine = WeatherEngine()
+        self.world_clock = LivingWorldClock()
+
+        self.scheduled_npcs: list[ScheduledNPC] = []
+        althea = None
+        thorin = None
+        for room in self.world.values():
+            for npc in room.npcs:
+                if npc.name == "Priestess Althea":
+                    althea = npc
+                elif npc.name == "Blacksmith Thorin":
+                    thorin = npc
+
+        if althea:
+            self.scheduled_npcs.append(
+                ScheduledNPC(
+                    althea,
+                    {
+                        "Dawn": "Eldergrove Center",
+                        "Day": "Eldergrove Temple (Aether Sanctuary)",
+                        "Dusk": "Eldergrove Center",
+                        "Night": "Eldergrove Tavern (The Golden Oak)",
+                    },
+                )
+            )
+        if thorin:
+            self.scheduled_npcs.append(
+                ScheduledNPC(
+                    thorin,
+                    {
+                        "Dawn": "Eldergrove Blacksmith (Iron & Ash)",
+                        "Day": "Eldergrove Blacksmith (Iron & Ash)",
+                        "Dusk": "Eldergrove Center",
+                        "Night": "Eldergrove Tavern (The Golden Oak)",
+                    },
+                )
+            )
+
     def get_current_quick_actions(self) -> list[tuple[str, str]]:
         actions: list[tuple[str, str]] = []
         room = self.player.current_room
@@ -244,6 +286,8 @@ class GameController:
             self.player,
             dynamic_description=dynamic_desc,
             world=self.world,
+            weather_engine=self.weather_engine,
+            world_clock=self.world_clock,
         )
         render_action_log(self.message_log)
 
@@ -487,6 +531,8 @@ class GameController:
             "i",
             "map",
             "m",
+            "talents",
+            "t",
         ]
 
     def process_command(self, command_str: str):
@@ -585,6 +631,9 @@ class GameController:
             )
             show_terminal_cursor(False)
 
+        elif verb in ["talents", "t"]:
+            self.show_talents_screen()
+
         elif verb == "save":
             self.handle_save()
 
@@ -598,6 +647,102 @@ class GameController:
             console.print(
                 "[red]I don't understand that command. Type 'help' to see options.[/red]"
             )
+
+    def show_talents_screen(self):
+        """Renders an interactive, fullscreen double-buffered Talent point allocation menu."""
+        from rich.panel import Panel
+        from rich.table import Table
+
+        while True:
+            clear_and_home_screen()
+            tree = self.player.talent_tree
+            sp = self.player.skill_points
+
+            table = Table(
+                title=f"✨ [bold gold1]{self.player.name}'s {self.player.char_class} Talent Tree ({sp} SP Available)[/bold gold1]",
+                expand=True,
+            )
+            table.add_column("ID", style="cyan", width=15)
+            table.add_column("Talent Node Name", style="bold yellow")
+            table.add_column("Description", style="white")
+            table.add_column("Rank", style="green", justify="center")
+            table.add_column("Prerequisites", style="magenta")
+            table.add_column("Status", style="bold blue")
+
+            for nid, node in tree.nodes.items():
+                prereqs = (
+                    ", ".join(node.prerequisites) if node.prerequisites else "None"
+                )
+                status = (
+                    "[bold green]MAX[/bold green]"
+                    if node.current_rank >= node.max_rank
+                    else (
+                        "[green]Available[/green]"
+                        if tree.can_allocate(nid, sp)
+                        else "[red]Locked[/red]"
+                    )
+                )
+                table.add_row(
+                    nid,
+                    node.name,
+                    node.description,
+                    f"{node.current_rank}/{node.max_rank}",
+                    prereqs,
+                    status,
+                )
+
+            console.print(
+                Panel(
+                    table,
+                    subtitle="Commands: 'allocate <id>' to invest SP | 'exit' to return",
+                )
+            )
+            show_terminal_cursor(True)
+            choice = console.input("\nChoose an option: ").strip().lower()
+            show_terminal_cursor(False)
+
+            if choice == "exit" or not choice:
+                break
+
+            if choice.startswith("allocate "):
+                target_id = choice.split(" ", 1)[1].strip()
+                if target_id in tree.nodes:
+                    success = tree.allocate(target_id, self.player)
+                    if success:
+                        # Sync current hp/mana pools to new stat capacities
+                        self.player.hp = min(self.player.hp, self.player.max_hp)
+                        self.player.mana = min(self.player.mana, self.player.max_mana)
+                        self.message_log.append(
+                            f"[bold green]Allocated 1 SP to {tree.nodes[target_id].name}![/bold green]"
+                        )
+                    else:
+                        self.message_log.append(
+                            "[red]Cannot allocate point. Requirements not met or no SP remaining.[/red]"
+                        )
+                else:
+                    self.message_log.append("[red]Invalid talent node ID.[/red]")
+
+    def tick_world_simulation(self):
+        """Safely ticks time-of-day clock and updates scheduled NPC coordinates."""
+        # 1. Tick Clock
+        clock_announcement = self.world_clock.tick_movement()
+        if clock_announcement:
+            self.message_log.append(clock_announcement)
+
+        # 2. Advance NPC Schedules safely (preventing mutating list-size runtime errors)
+        current_time = self.world_clock.current_time
+
+        npcs_moved = []
+        for s_npc in self.scheduled_npcs:
+            log_line = s_npc.update_location(current_time, self.world)
+            if log_line:
+                npcs_moved.append(log_line)
+
+        # Print movements to logs if the player is in the same source/destination room
+        player_room_name = self.player.current_room.name
+        for log in npcs_moved:
+            if player_room_name in log:
+                self.message_log.append(log)
 
     def move_player(self, direction: str):
         if not direction or direction not in self.DIRECTIONS:
@@ -640,6 +785,24 @@ class GameController:
         console.print(
             f"\n[bold green]You travel {direction} to the {next_room.name}.[/bold green]"
         )
+
+        # 1. Tick Global Weather
+        weather_announcement = self.weather_engine.tick()
+        if weather_announcement:
+            self.message_log.append(weather_announcement)
+
+        # 2. Resolve Environmental Hazards in Next Room (if any)
+        if next_room.hazard:
+            hazard_log = next_room.hazard.resolve_tick(self.player)
+            if hazard_log:
+                self.message_log.append(hazard_log)
+                if "[bold red]" in hazard_log:
+                    TTSManager().speak(
+                        "Warning: environmental hazard encountered.", "System"
+                    )
+
+        # 3. Tick world clock and scheduled NPCs
+        self.tick_world_simulation()
 
         # Display new location info
         self.render_current_room()
@@ -1445,6 +1608,8 @@ class GameController:
             self.quests,
             self.player.current_room.name,
             self.tavern_companions,
+            world_clock=self.world_clock,
+            weather_engine=self.weather_engine,
         )
         if success:
             console.print(
@@ -1457,12 +1622,27 @@ class GameController:
 
     def handle_load(self):
         try:
-            p, pt, w, q, rname, tav, was_recovered = load_game(self.world, self.quests)
+            p, pt, w, q, rname, tav, was_recovered, clock_data, weather_data = (
+                load_game(self.world, self.quests)
+            )
             self.player = p
             self.party = pt
             self.world = w
             self.quests = q
             self.tavern_companions = tav
+
+            if clock_data:
+                self.world_clock.current_index = clock_data.get("current_index", 1)
+                self.world_clock.movement_ticks = clock_data.get("movement_ticks", 0)
+            if weather_data:
+                state_key = weather_data.get("current_state_key", "clear")
+                if state_key in self.weather_engine.STATES:
+                    self.weather_engine.current_state = self.weather_engine.STATES[
+                        state_key
+                    ]
+                self.weather_engine.turns_remaining = weather_data.get(
+                    "turns_remaining", 15
+                )
 
             if was_recovered:
                 console.print(
