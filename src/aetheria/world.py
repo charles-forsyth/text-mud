@@ -113,8 +113,11 @@ def build_default_world() -> Dict[str, Room]:
 
     # Setup Eldergrove Exits
     eldergrove_center.add_exit("north", eldergrove_tavern)
+    eldergrove_tavern.add_exit("south", eldergrove_center)
     eldergrove_center.add_exit("east", eldergrove_blacksmith)
+    eldergrove_blacksmith.add_exit("west", eldergrove_center)
     eldergrove_center.add_exit("west", eldergrove_temple)
+    eldergrove_temple.add_exit("east", eldergrove_center)
 
     # Add NPCs to Eldergrove
     eldergrove_tavern.npcs.append(
@@ -250,6 +253,7 @@ def build_default_world() -> Dict[str, Room]:
     silverlight_bridge.add_exit("east", silverlight_square)
     silverlight_square.add_exit("west", silverlight_bridge)
     silverlight_square.add_exit("north", silverlight_smithy)
+    silverlight_smithy.add_exit("south", silverlight_square)
 
     # Silverlight Armory NPC
     silverlight_smithy.npcs.append(

@@ -24,6 +24,27 @@ class TestAetheriaWorld(unittest.TestCase):
         self.assertEqual(
             center.exits["east"].name, "Eldergrove Blacksmith (Iron & Ash)"
         )
+        self.assertEqual(
+            center.exits["west"].name, "Eldergrove Temple (Aether Sanctuary)"
+        )
+
+        # Reverse exits check
+        self.assertEqual(
+            self.world["Eldergrove Tavern (The Golden Oak)"].exits["south"].name,
+            "Eldergrove Center",
+        )
+        self.assertEqual(
+            self.world["Eldergrove Blacksmith (Iron & Ash)"].exits["west"].name,
+            "Eldergrove Center",
+        )
+        self.assertEqual(
+            self.world["Eldergrove Temple (Aether Sanctuary)"].exits["east"].name,
+            "Eldergrove Center",
+        )
+        self.assertEqual(
+            self.world["Silverlight Royal Armory"].exits["south"].name,
+            "Silverlight Keep Square",
+        )
 
     def test_npc_placement(self):
         tavern = self.world["Eldergrove Tavern (The Golden Oak)"]
