@@ -4,15 +4,29 @@ from rich.table import Table
 from rich.columns import Columns
 from rich.text import Text
 from rich.box import ROUNDED, DOUBLE
+from rich.layout import Layout
 from typing import Any, List, Optional
 from aetheria.entity import Player, Companion, Enemy
 from aetheria.world import Room
 from aetheria.quests import Quest
 
+# Import premium UI/UX modular system
+from aetheria.ui_meters import render_stat_progress_bar
+from aetheria.ui_layout import generate_main_dashboard_layout
+from aetheria.ui_log import parse_string_to_log_event, ScrollingActivityLog
+from aetheria.ui_effects import render_dynamic_impact_panel
+from aetheria.ui_input import (
+    interactive_prompt as interactive_prompt,
+    get_input_suggestions_panel as get_input_suggestions_panel,
+)
+
 import sys
 
 # Instantiate global rich console
 console = Console()
+
+# Global state to prevent duplicate/redundant prints in sequential logging
+DASHBOARD_RENDERED = False
 
 
 class TerminalScreen:
@@ -322,6 +336,8 @@ def render_room_panel(
     world: Optional[dict] = None,
     weather_engine: Optional[Any] = None,
     world_clock: Optional[Any] = None,
+    message_log: Optional[List[str]] = None,
+    is_impacted: bool = False,
 ):
     """Renders a beautiful visual layout of the player's current location with regional and local maps."""
     header_style = "bold bright_green" if room.is_town else "bold deep_pink4"
@@ -380,36 +396,186 @@ def render_room_panel(
         f"🚪 [bold green]Exits:[/bold green] {exits_str if exits_str else '[dim]None[/dim]'}"
     )
 
-    # Render Regional Map Panel first (always updates and is shown at the top of the interface)
-    region_map_panel = get_region_map_panel(room, world)
-    if region_map_panel:
-        console.print(region_map_panel)
-        console.print()
+    if message_log is not None:
+        # PREMIUM UI/UX TUI DASHBOARD RENDER PATH
+        # 1. Build room panel with potential impact layout effect
+        room_panel = render_dynamic_impact_panel(
+            "\n".join(room_details), box_header, is_impacted=is_impacted
+        )
 
-    # Create side-by-side Table layout
-    layout_table = Table.grid(expand=True)
-    layout_table.add_column(ratio=65)
-    layout_table.add_column(width=2)
-    layout_table.add_column(ratio=35)
+        # 2. Get local map (minimap) panel
+        minimap_panel = get_minimap_panel(room)
 
-    room_panel = Panel(
-        "\n".join(room_details),
-        title=f"[{header_style}]{box_header}[/{header_style}]",
-        box=ROUNDED,
-        border_style="green" if room.is_town else "red",
-        padding=(1, 2),
-        expand=True,
-    )
+        # 3. Construct the party panel dynamically with graphical progress bars
+        party_panel_content = Table.grid(expand=True)
+        party_panel_content.add_column(ratio=50)
+        party_panel_content.add_column(width=2)
+        party_panel_content.add_column(ratio=50)
 
-    minimap_panel = get_minimap_panel(room)
+        # Player column
+        p_hp_bar = render_stat_progress_bar("HP", player.hp, player.max_hp, width=12)
+        p_mp_bar = render_stat_progress_bar(
+            "MP", player.mana, player.max_mana, width=12, color_scheme="mana"
+        )
+        p_xp_bar = render_stat_progress_bar(
+            "XP", player.xp, player.xp_to_next_level(), width=12, color_scheme="xp"
+        )
 
-    layout_table.add_row(room_panel, "", minimap_panel)
+        player_info = Text.assemble(
+            Text(f"🌟 {player.name} ", style="bold gold1"),
+            Text(f"({player.char_class}) Lvl {player.level}\n", style="italic white"),
+            p_hp_bar,
+            Text("  "),
+            p_mp_bar,
+            Text("  "),
+            p_xp_bar,
+            Text("\n"),
+            Text(
+                f"💰 Gold: {player.gold}  ⚔️ ATK: {player.attack}  🛡️ DEF: {player.defense}",
+                style="bold yellow",
+            ),
+        )
 
-    # Render Main Room side-by-side Panel
-    console.print(layout_table)
+        left_side = Panel(
+            player_info,
+            border_style="gold1",
+            box=ROUNDED,
+            title="[bold gold1]Hero[/bold gold1]",
+        )
 
-    # Render Side Mini-HUD
-    render_mini_party_hud(player, party)
+        companion_texts = []
+        for c in party:
+            c_status = (
+                " [bold green]ALIVE[/bold green]"
+                if c.is_alive
+                else " [bold dim red]DEAD[/bold dim red]"
+            )
+            c_hp_bar = render_stat_progress_bar("HP", c.hp, c.max_hp, width=10)
+            c_mp_bar = render_stat_progress_bar(
+                "MP", c.mana, c.max_mana, width=10, color_scheme="mana"
+            )
+            comp_info = Text.assemble(
+                Text(f"👥 {c.name} ", style="bold cyan"),
+                Text(f"({c.char_class}) Lvl {c.level}", style="white"),
+                Text(c_status),
+                Text("\n"),
+                c_hp_bar,
+                Text("  "),
+                c_mp_bar,
+            )
+            companion_texts.append(comp_info)
+
+        if companion_texts:
+            all_comp_text = Text()
+            for idx, ct in enumerate(companion_texts):
+                if idx > 0:
+                    all_comp_text.append("\n")
+                all_comp_text.append(ct)
+            right_side = Panel(
+                all_comp_text,
+                border_style="cyan",
+                box=ROUNDED,
+                title="[bold cyan]Companions[/bold cyan]",
+            )
+        else:
+            right_side = Panel(
+                Text(
+                    "[italic dim]No companions in party.[/italic dim]\nRecruit allies at the Eldergrove Tavern!",
+                    justify="center",
+                ),
+                border_style="dim",
+                box=ROUNDED,
+                title="[dim]Companions[/dim]",
+            )
+
+        party_panel_content.add_row(left_side, "", right_side)
+
+        party_panel = Panel(
+            party_panel_content,
+            title="[bold yellow]👥 Adventure Party Status[/bold yellow]",
+            border_style="yellow",
+            box=ROUNDED,
+            expand=True,
+        )
+
+        # 4. Construct the structured log panel
+        activity_log = ScrollingActivityLog()
+        for line in message_log:
+            event = parse_string_to_log_event(line)
+            activity_log.append(event.category, event.message)
+
+        log_lines = activity_log.get_display_lines(limit=10)
+        log_text = Text()
+        for idx, line_text in enumerate(log_lines):
+            if idx > 0:
+                log_text.append("\n")
+            log_text.append(line_text)
+
+        log_panel = Panel(
+            log_text,
+            title="⚡ [bold gold1]Recent Activity Log[/bold gold1]",
+            border_style="gold1",
+            box=ROUNDED,
+            expand=True,
+            padding=(0, 1),
+        )
+
+        # 5. Assemble and print full screen dashboard layout
+        layout = generate_main_dashboard_layout(
+            room_panel=room_panel,
+            minimap_panel=minimap_panel,
+            party_panel=party_panel,
+            log_panel=log_panel,
+            header_title=f"✨ {room.name} ✨"
+            if room.is_town
+            else f"🌋 {room.name} (Hostile Area) 🌋",
+        )
+
+        region_map_panel = get_region_map_panel(room, world)
+        if region_map_panel:
+            layout["body"]["map_views"].split_column(
+                Layout(name="region_map", ratio=55), Layout(name="local_map", ratio=45)
+            )
+            layout["body"]["map_views"]["region_map"].update(region_map_panel)
+            layout["body"]["map_views"]["local_map"].update(minimap_panel)
+
+        console.print(layout)
+
+        # Trigger dashboard bypass for sequential activity renderer
+        global DASHBOARD_RENDERED
+        DASHBOARD_RENDERED = True
+
+    else:
+        # ORIGINAL SEQUENTIAL FALLBACK (For backward compatibility & standard unit tests)
+        region_map_panel = get_region_map_panel(room, world)
+        if region_map_panel:
+            console.print(region_map_panel)
+            console.print()
+
+        # Create side-by-side Table layout
+        layout_table = Table.grid(expand=True)
+        layout_table.add_column(ratio=65)
+        layout_table.add_column(width=2)
+        layout_table.add_column(ratio=35)
+
+        room_panel = Panel(
+            "\n".join(room_details),
+            title=f"[{header_style}]{box_header}[/{header_style}]",
+            box=ROUNDED,
+            border_style="green" if room.is_town else "red",
+            padding=(1, 2),
+            expand=True,
+        )
+
+        minimap_panel = get_minimap_panel(room)
+
+        layout_table.add_row(room_panel, "", minimap_panel)
+
+        # Render Main Room side-by-side Panel
+        console.print(layout_table)
+
+        # Render Side Mini-HUD
+        render_mini_party_hud(player, party)
 
 
 def render_mini_party_hud(player: Player, party: List[Companion]):
@@ -657,6 +823,11 @@ def render_quests_log(quests: List[Quest]):
 
 def render_action_log(message_log: List[str]):
     """Renders a beautiful scrolling Action Log panel containing recent game history events."""
+    global DASHBOARD_RENDERED
+    if DASHBOARD_RENDERED:
+        DASHBOARD_RENDERED = False
+        return
+
     # Filter out empty lines
     clean_lines = [line.strip() for line in message_log if line.strip()]
     # Keep the last 10 lines to fit terminal nicely without overflowing

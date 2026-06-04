@@ -39,6 +39,8 @@ from aetheria.ui import (
     clear_and_home_screen,
     show_terminal_cursor,
     render_action_log,
+    interactive_prompt,
+    get_input_suggestions_panel,
 )
 
 
@@ -288,6 +290,7 @@ class GameController:
             world=self.world,
             weather_engine=self.weather_engine,
             world_clock=self.world_clock,
+            message_log=self.message_log,
         )
         render_action_log(self.message_log)
 
@@ -407,8 +410,17 @@ class GameController:
                     self.quick_actions = self.get_current_quick_actions()
                     render_quick_actions(self.quick_actions)
 
+                    # Render the live input suggestions helper panel
+                    suggestions_panel = get_input_suggestions_panel(
+                        "", list(self.player.current_room.exits.keys())
+                    )
+                    console.print(suggestions_panel)
+
                     show_terminal_cursor(True)
-                    command = console.input("\n[bold green]>[/bold green] ")
+                    command = interactive_prompt(
+                        valid_exits=list(self.player.current_room.exits.keys()),
+                        prompt_text="\n[bold green]> [/bold green]",
+                    )
                     show_terminal_cursor(False)
 
                     if self.is_heavy_command(command):
