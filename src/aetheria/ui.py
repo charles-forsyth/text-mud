@@ -328,7 +328,50 @@ def get_region_map_panel(room: Room, world: Optional[dict] = None) -> Optional[P
     )
 
 
-def render_room_panel(
+_PREV_STATS: dict[str, int] = {}
+
+
+def get_combined_actions_and_help_panel(
+    actions: List[tuple], valid_exits: List[str]
+) -> Panel:
+    """
+    Renders a unified compact panel of numbered quick actions and context suggestions.
+    Fits perfectly in exactly 5 lines of vertical inner space (inside a size=7 footer layout).
+    """
+    grid = Table.grid(expand=True)
+    grid.add_column(style="bold yellow", justify="left", width=4)
+    grid.add_column(style="white", justify="left")
+
+    # Pick top actions to show (up to 4 actions)
+    displayed_actions = actions[:4] if actions else []
+    for idx, (display_text, command) in enumerate(displayed_actions, 1):
+        grid.add_row(f" {idx} ", display_text)
+
+    # Fill remaining rows up to 4 to keep size constant
+    for idx in range(len(displayed_actions), 4):
+        grid.add_row("", "")
+
+    # Divider and Hotkey suggestion line
+    exits_shorthand = (
+        "/".join(e[0].lower() for e in valid_exits) if valid_exits else "none"
+    )
+    help_text = f"💡 [bold yellow]Hotkeys:[/bold yellow] [{exits_shorthand}] Move | [look] Inspect | [i] Bag"
+
+    table = Table.grid(expand=True)
+    table.add_column(ratio=100)
+    table.add_row(grid)
+    table.add_row(Text.from_markup(help_text, style="dim white"))
+
+    return Panel(
+        table,
+        title="⚡ [bold yellow]Quick Actions Hub[/bold yellow]",
+        border_style="yellow",
+        box=ROUNDED,
+        padding=(0, 1),
+    )
+
+
+def _print_layout_frame(
     room: Room,
     party: List[Companion],
     player: Player,
@@ -338,8 +381,8 @@ def render_room_panel(
     world_clock: Optional[Any] = None,
     message_log: Optional[List[str]] = None,
     is_impacted: bool = False,
+    quick_actions: Optional[List[tuple]] = None,
 ):
-    """Renders a beautiful visual layout of the player's current location with regional and local maps."""
     header_style = "bold bright_green" if room.is_town else "bold deep_pink4"
     box_header = f"✨ {room.name}" if room.is_town else f"🌋 {room.name} (Hostile Area)"
 
@@ -418,7 +461,11 @@ def render_room_panel(
             "MP", player.mana, player.max_mana, width=12, color_scheme="mana"
         )
         p_xp_bar = render_stat_progress_bar(
-            "XP", player.xp, player.xp_to_next_level(), width=12, color_scheme="xp"
+            "XP",
+            player.xp,
+            player.xp_to_next_level(),
+            width=12,
+            color_scheme="xp",
         )
 
         player_info = Text.assemble(
@@ -504,7 +551,9 @@ def render_room_panel(
             event = parse_string_to_log_event(line)
             activity_log.append(event.category, event.message)
 
-        log_lines = activity_log.get_display_lines(limit=10)
+        # Limit to 5 lines for combined layout height budget of size=7 footer
+        log_limit = 5 if quick_actions is not None else 10
+        log_lines = activity_log.get_display_lines(limit=log_limit)
         log_text = Text()
         for idx, line_text in enumerate(log_lines):
             if idx > 0:
@@ -520,12 +569,20 @@ def render_room_panel(
             padding=(0, 1),
         )
 
-        # 5. Assemble and print full screen dashboard layout
+        # 5. Build combined suggestions panel
+        quick_actions_panel = None
+        if quick_actions is not None:
+            quick_actions_panel = get_combined_actions_and_help_panel(
+                quick_actions, list(room.exits.keys())
+            )
+
+        # 6. Assemble and print full screen dashboard layout
         layout = generate_main_dashboard_layout(
             room_panel=room_panel,
             minimap_panel=minimap_panel,
             party_panel=party_panel,
             log_panel=log_panel,
+            quick_actions_panel=quick_actions_panel,
             header_title=f"✨ {room.name} ✨"
             if room.is_town
             else f"🌋 {room.name} (Hostile Area) 🌋",
@@ -533,11 +590,26 @@ def render_room_panel(
 
         region_map_panel = get_region_map_panel(room, world)
         if region_map_panel:
-            layout["body"]["map_views"].split_column(
-                Layout(name="region_map", ratio=55), Layout(name="local_map", ratio=45)
-            )
-            layout["body"]["map_views"]["region_map"].update(region_map_panel)
-            layout["body"]["map_views"]["local_map"].update(minimap_panel)
+            if quick_actions_panel is None:
+                # original layout
+                layout["body"]["map_views"].split_column(
+                    Layout(name="region_map", ratio=55),
+                    Layout(name="local_map", ratio=45),
+                )
+                layout["body"]["map_views"]["region_map"].update(region_map_panel)
+                layout["body"]["map_views"]["local_map"].update(minimap_panel)
+            else:
+                # split row side-by-side inside map_views
+                layout["body"]["stats_and_maps"]["map_views"].split_row(
+                    Layout(name="region_map", ratio=50),
+                    Layout(name="local_map", ratio=50),
+                )
+                layout["body"]["stats_and_maps"]["map_views"]["region_map"].update(
+                    region_map_panel
+                )
+                layout["body"]["stats_and_maps"]["map_views"]["local_map"].update(
+                    minimap_panel
+                )
 
         console.print(layout)
 
@@ -575,7 +647,124 @@ def render_room_panel(
         console.print(layout_table)
 
         # Render Side Mini-HUD
+        from aetheria.ui import render_mini_party_hud
+
         render_mini_party_hud(player, party)
+
+
+def render_room_panel(
+    room: Room,
+    party: List[Companion],
+    player: Player,
+    dynamic_description: Optional[str] = None,
+    world: Optional[dict] = None,
+    weather_engine: Optional[Any] = None,
+    world_clock: Optional[Any] = None,
+    message_log: Optional[List[str]] = None,
+    is_impacted: bool = False,
+    quick_actions: Optional[List[tuple]] = None,
+):
+    """Renders visual layout of the player's current location with automatic, non-blocking stats animations."""
+    global _PREV_STATS
+
+    current_stats = {
+        "player_hp": player.hp,
+        "player_mana": player.mana,
+        "player_xp": player.xp,
+    }
+    for comp in party:
+        current_stats[f"comp_{comp.name}_hp"] = comp.hp
+        current_stats[f"comp_{comp.name}_mana"] = comp.mana
+
+    # Detect any changes
+    has_changes = False
+    if _PREV_STATS:
+        for k, v in current_stats.items():
+            if _PREV_STATS.get(k, v) != v:
+                has_changes = True
+                break
+
+    import os
+    import sys
+
+    # Only run interactive animation if we are in a real TTY and not running pytest unit tests
+    is_interactive = (
+        sys.stdin.isatty()
+        and sys.stdout.isatty()
+        and "PYTEST_CURRENT_TEST" not in os.environ
+    )
+
+    if has_changes and is_interactive and message_log is not None:
+        # Interpolate frame states
+        frames = 5
+        import time
+
+        for frame in range(1, frames):
+            t = frame / frames
+
+            # Interpolate Player stats
+            orig_p_hp, orig_p_mana, orig_p_xp = (
+                player.hp,
+                player.mana,
+                player.xp,
+            )
+            cached_p_hp = _PREV_STATS.get("player_hp", player.hp)
+            cached_p_mp = _PREV_STATS.get("player_mana", player.mana)
+            cached_p_xp = _PREV_STATS.get("player_xp", player.xp)
+
+            player.hp = int(cached_p_hp + t * (player.hp - cached_p_hp))
+            player.mana = int(cached_p_mp + t * (player.mana - cached_p_mp))
+            player.xp = int(cached_p_xp + t * (player.xp - cached_p_xp))
+
+            # Interpolate Companion stats
+            orig_comp_stats = []
+            for comp in party:
+                orig_hp, orig_mana = comp.hp, comp.mana
+                orig_comp_stats.append((comp, orig_hp, orig_mana))
+
+                cached_hp = _PREV_STATS.get(f"comp_{comp.name}_hp", comp.hp)
+                cached_mana = _PREV_STATS.get(f"comp_{comp.name}_mana", comp.mana)
+
+                comp.hp = int(cached_hp + t * (comp.hp - cached_hp))
+                comp.mana = int(cached_mana + t * (comp.mana - cached_mana))
+
+            # Redraw full screen
+            clear_and_home_screen()
+            _print_layout_frame(
+                room,
+                party,
+                player,
+                dynamic_description,
+                world,
+                weather_engine,
+                world_clock,
+                message_log,
+                is_impacted,
+                quick_actions,
+            )
+
+            # Restore original state immediately
+            player.hp, player.mana, player.xp = orig_p_hp, orig_p_mana, orig_p_xp
+            for comp, orig_hp, orig_mana in orig_comp_stats:
+                comp.hp, comp.mana = orig_hp, orig_mana
+
+            time.sleep(0.04)
+
+    # Print final frame and update cache
+    _PREV_STATS = current_stats
+    clear_and_home_screen()
+    _print_layout_frame(
+        room,
+        party,
+        player,
+        dynamic_description,
+        world,
+        weather_engine,
+        world_clock,
+        message_log,
+        is_impacted,
+        quick_actions,
+    )
 
 
 def render_mini_party_hud(player: Player, party: List[Companion]):

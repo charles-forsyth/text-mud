@@ -94,6 +94,34 @@ class TestPremiumUIUX(unittest.TestCase):
         self.assertIsNotNone(layout["body"])
         self.assertIsNotNone(layout["footer"])
 
+    def test_reimagined_dashboard_layout_grid_with_quick_actions(self):
+        """Verify that passing quick_actions_panel splits the layout according to the reimagined dashboard."""
+        room_panel = Panel("Room Content")
+        minimap_panel = Panel("Minimap Content")
+        party_panel = Panel("Party Status Content")
+        log_panel = Panel("Activity Log Content")
+        quick_actions_panel = Panel("Quick Actions Content")
+
+        layout = generate_main_dashboard_layout(
+            room_panel,
+            minimap_panel,
+            party_panel,
+            log_panel,
+            quick_actions_panel=quick_actions_panel,
+        )
+        self.assertIsInstance(layout, Layout)
+        self.assertIsNotNone(layout["header"])
+        self.assertIsNotNone(layout["body"])
+        self.assertIsNotNone(layout["footer"])
+
+        # Verify specific sub-layouts exist in the reimagined layout
+        self.assertIsNotNone(layout["body"]["exploration"])
+        self.assertIsNotNone(layout["body"]["stats_and_maps"])
+        self.assertIsNotNone(layout["body"]["stats_and_maps"]["map_views"])
+        self.assertIsNotNone(layout["body"]["stats_and_maps"]["party_hud"])
+        self.assertIsNotNone(layout["footer"]["activity_log"])
+        self.assertIsNotNone(layout["footer"]["quick_actions"])
+
     def test_smart_command_input_suggestions_hud(self):
         """Verify autocomplete HUD guides player inputs dynamically."""
         panel_empty = get_input_suggestions_panel("", ["north", "south"])
