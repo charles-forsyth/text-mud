@@ -3,6 +3,7 @@ import tempfile
 import threading
 import queue
 import hashlib
+import time
 import pygame
 from typing import Optional
 from google.cloud import texttospeech
@@ -25,21 +26,40 @@ DEFAULT_MALE_VOICE = "en-US-Chirp3-HD-Enceladus"
 
 
 class CircuitBreaker:
-    """Protects against persistent slow/offline network calls by tripping after consecutive failures."""
+    """Protects against persistent slow/offline network calls by tripping after consecutive failures.
+    Supports automatic recovery via dynamic state transitions."""
 
-    def __init__(self, failure_threshold: int = 3):
+    def __init__(self, failure_threshold: int = 3, cooldown_seconds: float = 60.0):
         self.failure_threshold = failure_threshold
+        self.cooldown_seconds = cooldown_seconds
         self.failure_count = 0
-        self.is_open = False
+        self._is_open = False
+        self.last_state_change = 0.0
+
+    @property
+    def is_open(self) -> bool:
+        if self._is_open:
+            if time.time() - self.last_state_change >= self.cooldown_seconds:
+                # Dynamically enters a half-open state by allowing a canary call
+                return False
+            return True
+        return False
+
+    @is_open.setter
+    def is_open(self, value: bool):
+        self._is_open = value
+        self.last_state_change = time.time()
 
     def record_success(self):
         self.failure_count = 0
-        self.is_open = False
+        self._is_open = False
+        self.last_state_change = time.time()
 
     def record_failure(self):
         self.failure_count += 1
         if self.failure_count >= self.failure_threshold:
-            self.is_open = True
+            self._is_open = True
+            self.last_state_change = time.time()
 
 
 class TTSManager:
@@ -62,6 +82,12 @@ class TTSManager:
         self._current_temp_file: Optional[str] = None
         self._initialized = True
         self._client: Optional[texttospeech.TextToSpeechClient] = None
+
+        # Temp files tracking for process-exit deletion
+        import atexit
+
+        self._temp_files_to_clean: list[str] = []
+        atexit.register(self.cleanup_temp_files)
 
         # Queue-based asynchronous worker system
         self._queue: queue.Queue = queue.Queue()
@@ -292,6 +318,9 @@ class TTSManager:
                 temp_file.write(audio_content)
                 temp_path = temp_file.name
 
+            # Track temp file for session cleanup
+            self._temp_files_to_clean.append(temp_path)
+
             if not pygame.mixer.get_init():
                 pygame.mixer.init()
 
@@ -308,3 +337,14 @@ class TTSManager:
                     pass
         except Exception:
             pass
+
+    def cleanup_temp_files(self):
+        """Purges all temporary audio files generated during this game session."""
+        self.stop_playback()
+        for filepath in self._temp_files_to_clean:
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception:
+                    pass
+        self._temp_files_to_clean.clear()

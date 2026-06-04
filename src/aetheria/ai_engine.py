@@ -1,4 +1,6 @@
 import google.generativeai as genai
+import time
+import threading
 from typing import Optional, List, Tuple
 from aetheria.config import GEMINI_API_KEY, DEFAULT_AI_MODEL
 
@@ -14,27 +16,89 @@ except Exception:
 
 
 class CircuitBreaker:
-    """Protects against persistent slow/offline network calls by tripping after consecutive failures."""
+    """Protects against persistent slow/offline network calls by tripping after consecutive failures.
+    Supports automatic recovery via dynamic state transitions."""
 
-    def __init__(self, failure_threshold: int = 3):
+    def __init__(self, failure_threshold: int = 3, cooldown_seconds: float = 60.0):
         self.failure_threshold = failure_threshold
+        self.cooldown_seconds = cooldown_seconds
         self.failure_count = 0
-        self.is_open = False
+        self._is_open = False
+        self.last_state_change = 0.0
+
+    @property
+    def is_open(self) -> bool:
+        if self._is_open:
+            if time.time() - self.last_state_change >= self.cooldown_seconds:
+                # Dynamically enters a half-open state by allowing a canary call
+                return False
+            return True
+        return False
+
+    @is_open.setter
+    def is_open(self, value: bool):
+        self._is_open = value
+        self.last_state_change = time.time()
 
     def record_success(self):
         self.failure_count = 0
-        self.is_open = False
+        self._is_open = False
+        self.last_state_change = time.time()
 
     def record_failure(self):
         self.failure_count += 1
         if self.failure_count >= self.failure_threshold:
-            self.is_open = True
+            self._is_open = True
+            self.last_state_change = time.time()
 
 
 _gemini_breaker = CircuitBreaker()
 
+
+class ThreadSafeCache:
+    """A thread-safe dictionary cache wrapper that handles eviction thread-safely."""
+
+    def __init__(self, max_size: int = 100):
+        self._cache: dict = {}
+        self._lock = threading.RLock()
+        self.max_size = max_size
+
+    def __contains__(self, key) -> bool:
+        with self._lock:
+            return key in self._cache
+
+    def __getitem__(self, key):
+        with self._lock:
+            return self._cache[key]
+
+    def __setitem__(self, key, value):
+        with self._lock:
+            if len(self._cache) >= self.max_size and key not in self._cache:
+                # Evict oldest entry (insertion ordered dict in 3.7+)
+                first_key = next(iter(self._cache))
+                self._cache.pop(first_key, None)
+            self._cache[key] = value
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._cache)
+
+    def __iter__(self):
+        with self._lock:
+            # Return list of keys to prevent dictionary mutation errors during iteration
+            return iter(list(self._cache.keys()))
+
+    def __delitem__(self, key):
+        with self._lock:
+            self._cache.pop(key, None)
+
+    def clear(self):
+        with self._lock:
+            self._cache.clear()
+
+
 # In-memory cache for generated room descriptions
-_ROOM_DESC_CACHE: dict[tuple, str] = {}
+_ROOM_DESC_CACHE = ThreadSafeCache()
 
 
 def call_gemini(prompt: str, temperature: float = 0.7) -> str:

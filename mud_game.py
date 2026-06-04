@@ -85,6 +85,13 @@ class GameController:
         self.is_running = True
         self.quick_actions: list[tuple[str, str]] = []
 
+        # Thread-safe queue for sequential prewarming tasks
+        import queue
+
+        self._prewarm_queue = queue.Queue()
+        self._prewarm_thread = None
+        self._start_prewarm_worker_if_needed()
+
     def get_current_quick_actions(self) -> list[tuple[str, str]]:
         actions: list[tuple[str, str]] = []
         room = self.player.current_room
@@ -234,13 +241,49 @@ class GameController:
         # Predictive prewarming of adjacent rooms' descriptions in background threads
         self._prewarm_adjacent_rooms(room)
 
-    def _prewarm_adjacent_rooms(self, current_room):
-        """Identifies all adjacent rooms and spins up background daemon threads to pre-generate their dynamic descriptions."""
+    def _start_prewarm_worker_if_needed(self):
+        """Lazily spawns the background prewarm worker thread if needed."""
         import threading
 
+        if self._prewarm_thread is None or not self._prewarm_thread.is_alive():
+            self._prewarm_thread = threading.Thread(
+                target=self._prewarm_worker_loop,
+                daemon=True,
+            )
+            self._prewarm_thread.start()
+
+    def _prewarm_worker_loop(self):
+        """Background worker thread that sequentializes Gemini prewarming calls with throttling."""
+        import time
+        from aetheria.ai_engine import generate_dynamic_room_description
+
+        while True:
+            try:
+                task = self._prewarm_queue.get()
+                if task is None:
+                    break
+                generate_dynamic_room_description(**task)
+                self._prewarm_queue.task_done()
+                time.sleep(0.5)  # Safe throttling gap
+            except Exception:
+                pass
+
+    def _prewarm_adjacent_rooms(self, current_room):
+        """Identifies all adjacent rooms and queues sequential tasks to pre-generate their dynamic descriptions."""
         # Avoid prewarming if player is not fully initialized
         if not self.player:
             return
+
+        # Ensure worker is alive
+        self._start_prewarm_worker_if_needed()
+
+        # Clear any pending prewarm tasks in queue to focus on the new room's exits
+        while not self._prewarm_queue.empty():
+            try:
+                self._prewarm_queue.get_nowait()
+                self._prewarm_queue.task_done()
+            except Exception:
+                break
 
         for direction, adj_room in current_room.exits.items():
             if not adj_room:
@@ -269,10 +312,9 @@ class GameController:
             player_name = self.player.name
             player_class = self.player.char_class
 
-            # Spin up a background thread to generate the dynamic description (populating the cache)
-            t = threading.Thread(
-                target=generate_dynamic_room_description,
-                kwargs={
+            # Queue the prewarm task
+            self._prewarm_queue.put(
+                {
                     "room_name": adj_room.name,
                     "base_description": adj_room.description,
                     "is_town": adj_room.is_town,
@@ -284,10 +326,8 @@ class GameController:
                     "player_class": player_class,
                     "party_members": party_list,
                     "quest_context": quest_context,
-                },
-                daemon=True,
+                }
             )
-            t.start()
 
     def run(self):
         render_title_screen()
@@ -958,12 +998,22 @@ class GameController:
                 console.print(print_msg)
                 return
 
+        # Scale companion level to match player level
+        scaled_up_levels = 0
+        while companion.level < self.player.level:
+            companion.level_up()
+            scaled_up_levels += 1
+
         # Remove from Tavern pool, add to active Party
         self.tavern_companions.remove(companion)
         self.party.append(companion)
         console.print(
             f"\n🎉 [bold yellow]{companion.name} the {companion.char_class} has joined your party![/bold yellow]"
         )
+        if scaled_up_levels > 0:
+            console.print(
+                f"🌟 [bold yellow]{companion.name}[/bold yellow] scaled up {scaled_up_levels} levels to match your experience (Level {companion.level})!"
+            )
         console.print(
             f'💬 [bold cyan]{companion.name}[/bold cyan]: "Greetings. I am ready to explore the depths. Lead the way."'
         )
