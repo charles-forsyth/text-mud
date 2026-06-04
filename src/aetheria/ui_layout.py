@@ -29,7 +29,8 @@ def generate_main_dashboard_layout(
 
     # 3. Split Body into Left (Room details) and Right (Maps)
     layout["body"].split_row(
-        Layout(name="room_details", ratio=65), Layout(name="map_views", ratio=35)
+        Layout(name="room_details", ratio=50),
+        Layout(name="map_views", ratio=50, minimum_size=58),
     )
 
     # 4. Split Footer into Left (Party HUD) and Right (Activity Logs)

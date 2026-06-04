@@ -922,14 +922,13 @@ def draw_eldergrove_map(current: str) -> str:
     b_marker = "★ " if current == "Eldergrove Blacksmith (Iron & Ash)" else "  "
 
     map_str = f"""
-                      [{t_style}]{t_marker}Tavern (The Golden Oak)[/{t_style}]
-                                      │
-                                      │
- [{tp_style}]{tp_marker}Temple (Aether Sanctuary)[/{tp_style}] ─── [{c_style}]{c_marker}Village Center (Square)[/{c_style}] ─── [{b_style}]{b_marker}Blacksmith (Iron & Ash)[/{b_style}]
-                                      │                                       │
-                                      │                                       │
-                                      ▼                                       ▼
-                          (To Whisperwood Entrance)                (To Silverlight Bridge)
+                 [{t_style}]{t_marker}Tavern (Golden Oak)[/{t_style}]
+                                │
+                                │
+ [{tp_style}]{tp_marker}Temple (Sanctuary)[/{tp_style}] ── [{c_style}]{c_marker}Center (Square)[/{c_style}] ── [{b_style}]{b_marker}Blacksmith[/{b_style}]
+                                │                             │
+                                ▼                             ▼
+                      (To Whisperwood)              (To Silverlight)
 """
     return map_str
 
@@ -948,19 +947,17 @@ def draw_whisperwood_map(current: str) -> str:
     cav_marker = "★ " if current == "Ancient Oak Cave" else "  "
 
     map_str = f"""
-                            (From Eldergrove Center)
-                                      │
-                                      ▼
-                          [{ent_style}]{ent_marker}Whisperwood Entrance[/{ent_style}]
-                                      │
-                                      │
-                                      ▼
-                            [{gob_style}]{gob_marker}Goblin Outpost[/{gob_style}] ─── [{gld_style}]{gld_marker}Whispering Glade[/{gld_style}]
-                                      │                           (Glowing Herbs)
-                                      │
-                                      ▼
-                            [{cav_style}]{cav_marker}Ancient Oak Cave[/{cav_style}]
-                          (BOSS: The Forest Ancient)
+                      (From Eldergrove)
+                              │
+                              ▼
+                  [{ent_style}]{ent_marker}Whisperwood Entrance[/{ent_style}]
+                              │
+                              ▼
+                  [{gob_style}]{gob_marker}Goblin Outpost[/{gob_style}] ── [{gld_style}]{gld_marker}Whispering Glade[/{gld_style}]
+                              │                       (Glowing Herbs)
+                              ▼
+                  [{cav_style}]{cav_marker}Ancient Oak Cave[/{cav_style}]
+                     (BOSS: Forest Ancient)
 """
     return map_str
 
@@ -968,8 +965,8 @@ def draw_whisperwood_map(current: str) -> str:
 def draw_silverlight_shadowspire_map(
     current: str, bridge_locked: bool, throne_locked: bool
 ) -> str:
-    brg_lock_str = " [🔒 LOCKED]" if bridge_locked else ""
-    thr_lock_str = " [🔒 LOCKED]" if throne_locked else ""
+    brg_lock_str = " [🔒]" if bridge_locked else ""
+    thr_lock_str = " [🔒]" if throne_locked else ""
 
     brg_style = (
         "bold yellow"
@@ -997,28 +994,24 @@ def draw_silverlight_shadowspire_map(
     thr_marker = "★ " if current == "Shadow Throne Room" else "  "
 
     map_str = f"""
-                   (From Eldergrove Blacksmith)
-                               │
-                               ▼
-                   [{brg_style}]{brg_marker}Silverlight Bridge{brg_lock_str}[/{brg_style}]
-                               │
-                               │
-                               ▼
-                   [{sq_style}]{sq_marker}Silverlight Keep Square[/{sq_style}] ─── [{arm_style}]{arm_marker}Royal Armory[/{arm_style}]
-                               │
-                               │
-                               ▼
-                   [{gat_style}]{gat_marker}Shadowspire Gates[/{gat_style}]
-                               │
-                               │
-                               ▼
-                   [{crt_style}]{crt_marker}Shadowspire Courtyard[/{crt_style}]
-                               │
-                ┌──────────────┴──────────────┐
-                │                             │
-                ▼                             ▼
-   [{lab_style}]{lab_marker}Alchemical Laboratory[/{lab_style}]     [{thr_style}]{thr_marker}Shadow Throne Room{thr_lock_str}[/{thr_style}]
-         (Void Horror)                (BOSS: Archmage Malakor)
+                 (From Eldergrove)
+                        │
+                        ▼
+             [{brg_style}]{brg_marker}Silverlight Bridge{brg_lock_str}[/{brg_style}]
+                        │
+                        ▼
+             [{sq_style}]{sq_marker}Keep Square[/{sq_style}] ── [{arm_style}]{arm_marker}Royal Armory[/{arm_style}]
+                        │
+                        ▼
+             [{gat_style}]{gat_marker}Shadowspire Gates[/{gat_style}]
+                        │
+                        ▼
+             [{crt_style}]{crt_marker}Shadowspire Courtyard[/{crt_style}]
+                        │
+               ┌────────┴────────┐
+               ▼                 ▼
+     [{lab_style}]{lab_marker}Alchem. Lab[/{lab_style}]     [{thr_style}]{thr_marker}Throne Room{thr_lock_str}[/{thr_style}]
+      (Void Horror)        (BOSS: Malakor)
 """
     return map_str
 

@@ -28,8 +28,11 @@ class GameLogEvent:
         theme = self.CATEGORY_THEMES.get(
             self.category, {"prefix": "•", "style": "white"}
         )
+        prefix = Text.from_markup(theme["prefix"])
+        prefix.pad_right(16)
+
         formatted = Text()
-        formatted.append(f"{theme['prefix']:<16}", style="bold")
+        formatted.append(prefix)
         formatted.append(f" {self.message}", style=theme["style"])
         return formatted
 
