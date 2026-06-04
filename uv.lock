@@ -852,7 +852,7 @@ wheels = [
 
 [[package]]
 name = "text-mud"
-version = "0.2.16"
+version = "0.2.17"
 source = { virtual = "." }
 dependencies = [
     { name = "google-cloud-texttospeech" },

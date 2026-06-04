@@ -64,11 +64,31 @@ class Entity:
     def is_alive(self) -> bool:
         return self.hp > 0
 
-    def take_damage(self, amount: int) -> int:
-        """Inflicts mitigated damage and returns the actual damage suffered."""
-        mitigated = max(1, amount - self.defense)
-        self.hp -= mitigated
-        return mitigated
+    def take_damage(self, amount: int, attacker_level: int = 1) -> int:
+        """
+        Inflicts non-linear mitigated damage using a hyperbolic diminishing returns curve.
+        Guarantees defense scales safely and never permanently locks combat at 1 damage.
+        """
+        # Tuning constant: higher values increase defense requirements to achieve 50% DR
+        k_scale = 15.0
+
+        # Scale defense requirements dynamically based on attacker tier to prevent over-level trivialization
+        scaled_denominator = self.defense + (k_scale * max(1, attacker_level))
+
+        # Prevent divide-by-zero if defense is zero
+        if scaled_denominator > 0:
+            damage_reduction = self.defense / scaled_denominator
+        else:
+            damage_reduction = 0.0
+
+        # Apply damage reduction (capped at 85% maximum reduction to prevent absolute immunity)
+        damage_reduction = min(0.85, damage_reduction)
+
+        mitigated = int(round(amount * (1.0 - damage_reduction)))
+        actual_damage = max(1, mitigated)
+
+        self.hp -= actual_damage
+        return actual_damage
 
     def heal(self, amount: int):
         """Restores health, capping at max_hp."""

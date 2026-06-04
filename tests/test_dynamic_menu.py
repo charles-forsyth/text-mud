@@ -137,6 +137,8 @@ class TestDynamicMenu(unittest.TestCase):
                 inventory_items=[],
                 quest_context="No major events.",
                 dialogue_history=[],
+                affinity=0,
+                relationship_flags=[],
             )
 
             # Test 2: Shorthand "Tavernkeeper Barnaby quest" (no "about" keyword)
@@ -157,6 +159,8 @@ class TestDynamicMenu(unittest.TestCase):
                     ("TestHero", "quest"),
                     ("Tavernkeeper Barnaby", "Mocked Response"),
                 ],
+                affinity=0,
+                relationship_flags=[],
             )
 
             # Test 3: Shorthand with just partial name "Barnaby hello"
@@ -179,6 +183,8 @@ class TestDynamicMenu(unittest.TestCase):
                     ("TestHero", "quest"),
                     ("Tavernkeeper Barnaby", "Mocked Response"),
                 ],
+                affinity=0,
+                relationship_flags=[],
             )
 
 

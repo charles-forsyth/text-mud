@@ -5,6 +5,19 @@ from aetheria.models import Spell, Consumable
 from aetheria.ai_engine import generate_combat_banter
 
 
+def calculate_evasion(entity: Any) -> float:
+    """Calculates evasion probability based on Level, Class, and passive stat parameters."""
+    base_evasion = 0.05  # 5% base dodge rate
+
+    # Rogues and agility-based heroes gain an inherent +10% evasion boost
+    class_bonus = 0.10 if getattr(entity, "char_class", "") == "Rogue" else 0.00
+
+    level_scaling = (entity.level * 0.01) / (1.0 + entity.level * 0.01)
+    return min(
+        0.50, base_evasion + class_bonus + level_scaling
+    )  # Cap maximum dodge at 50%
+
+
 class CombatManager:
     def __init__(self, player: Player, party: List[Companion], enemy: Enemy):
         self.player = player
@@ -110,7 +123,9 @@ class CombatManager:
             if self.player.spend_mana(spell.mana_cost):
                 if spell.damage > 0:
                     damage = spell.damage + int(self.player.attack * 0.5)
-                    inflicted = self.enemy.take_damage(damage)
+                    inflicted = self.enemy.take_damage(
+                        damage, attacker_level=self.player.level
+                    )
                     self.round_log.append(
                         f"🌟 {self.player.name} casts [bold cyan]{spell.name}[/bold cyan] at the {self.enemy.name}! "
                         f"Deals [bold red]{inflicted}[/bold red] magical damage! "
@@ -129,12 +144,21 @@ class CombatManager:
             return
 
         # Default Basic Attack
+        evasion_rate = calculate_evasion(self.enemy)
+        if random.random() < evasion_rate:
+            self.round_log.append(
+                f"💨 {self.enemy.name} swiftly dodges the incoming blow from {self.player.name}!"
+            )
+            return
+
         damage = self.player.attack
-        is_crit = random.random() < 0.15
+        is_crit = random.random() < (
+            0.25 if getattr(self.player, "char_class", "") == "Rogue" else 0.15
+        )
         if is_crit:
             damage = int(damage * 1.5)
 
-        inflicted = self.enemy.take_damage(damage)
+        inflicted = self.enemy.take_damage(damage, attacker_level=self.player.level)
         crit_str = "[bold red]CRITICAL HIT![/bold red] " if is_crit else ""
         self.round_log.append(
             f"⚔️ {crit_str}{self.player.name} strikes the {self.enemy.name}! "
@@ -178,7 +202,7 @@ class CombatManager:
             spell = dmg_spells[0]
             companion.spend_mana(spell.mana_cost)
             damage = spell.damage + int(companion.attack * 0.3)
-            inflicted = self.enemy.take_damage(damage)
+            inflicted = self.enemy.take_damage(damage, attacker_level=companion.level)
             self.round_log.append(
                 f"🔥 {companion.name} casts [bold cyan]{spell.name}[/bold cyan]! "
                 f"Deals [bold red]{inflicted}[/bold red] magical damage! "
@@ -187,11 +211,20 @@ class CombatManager:
             return
 
         # Default basic attack
+        evasion_rate = calculate_evasion(self.enemy)
+        if random.random() < evasion_rate:
+            self.round_log.append(
+                f"💨 {self.enemy.name} swiftly dodges the incoming blow from {companion.name}!"
+            )
+            return
+
         damage = companion.attack
-        is_crit = random.random() < 0.10
+        is_crit = random.random() < (
+            0.25 if getattr(companion, "char_class", "") == "Rogue" else 0.10
+        )
         if is_crit:
             damage = int(damage * 1.5)
-        inflicted = self.enemy.take_damage(damage)
+        inflicted = self.enemy.take_damage(damage, attacker_level=companion.level)
         crit_str = "[bold red]CRITICAL HIT![/bold red] " if is_crit else ""
         self.round_log.append(
             f"⚔️ {companion.name} attacks! {crit_str}Deals [bold red]{inflicted}[/bold red] damage! "
@@ -225,13 +258,23 @@ class CombatManager:
         if "announcement" in action:
             self.round_log.append(action["announcement"])
 
+        # Check evasion for incoming enemy attacks
+        evasion_rate = calculate_evasion(target)
+        if random.random() < evasion_rate:
+            self.round_log.append(
+                f"💨 {target.name} swiftly dodges the incoming blow '{action['name']}' from {self.enemy.name}!"
+            )
+            return
+
         # Defense calculation
         is_defending = target.name in self.defending
         mitigated_damage = damage
         if is_defending:
             mitigated_damage = int(damage * 0.5)
 
-        inflicted = target.take_damage(mitigated_damage)
+        inflicted = target.take_damage(
+            mitigated_damage, attacker_level=self.enemy.level
+        )
         def_str = " (Defending!)" if is_defending else ""
 
         self.round_log.append(

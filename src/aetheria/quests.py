@@ -1,5 +1,6 @@
 from typing import Dict, Optional
 from aetheria.models import Item, deserialize_item
+from aetheria.events import EventDispatcher, EventType, Event
 
 
 class Quest:
@@ -128,3 +129,32 @@ def get_default_quests() -> Dict[str, Quest]:
         ),
     }
     return quests
+
+
+class QuestObserver:
+    """Decoupled game observer that updates active player quest objectives based on emitted events."""
+
+    def __init__(self, game_controller):
+        self.controller = game_controller
+
+    def register_listeners(self):
+        """Registers listener bindings on the central event bus."""
+        EventDispatcher.subscribe(EventType.ENEMY_KILLED, self.on_enemy_killed)
+        EventDispatcher.subscribe(EventType.ITEM_ACQUIRED, self.on_item_acquired)
+        EventDispatcher.subscribe(EventType.NPC_SPOKEN, self.on_npc_spoken)
+
+    def on_enemy_killed(self, event: Event):
+        enemy_name = event.data.get("enemy_name")
+        if enemy_name:
+            self.controller.update_quest_progress("kill", enemy_name)
+
+    def on_item_acquired(self, event: Event):
+        item_name = event.data.get("item_name")
+        if item_name:
+            self.controller.update_quest_progress("fetch", item_name)
+
+    def on_npc_spoken(self, event: Event):
+        npc_name = event.data.get("npc_name")
+        topic = event.data.get("topic")
+        if npc_name and topic == "quest":
+            self.controller.update_quest_progress("talk", npc_name)
