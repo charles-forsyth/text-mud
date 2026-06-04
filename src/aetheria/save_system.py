@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import logging
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from aetheria.config import SAVE_FILE_NAME, SAVE_SCHEMA_VERSION
 from aetheria.entity import Player, Companion
 from aetheria.world import Room
@@ -37,9 +37,43 @@ def migrate_v1_to_v2(state: dict) -> dict:
     return state
 
 
+def migrate_v2_to_v3(state: dict) -> dict:
+    """Upgrades version 2 saves by introducing clock cycles, weather variables, and skill trees."""
+    logging.info("Migrating save file from Schema Version 2 to 3...")
+
+    # Initialize clock defaults
+    if "world_clock" not in state:
+        state["world_clock"] = {
+            "current_index": 1,  # Day
+            "movement_ticks": 0,
+        }
+
+    # Initialize weather defaults
+    if "weather_engine" not in state:
+        state["weather_engine"] = {"current_state_key": "clear", "turns_remaining": 15}
+
+    # Initialize player talent defaults
+    if "player" in state:
+        if "skill_points" not in state["player"]:
+            state["player"]["skill_points"] = 0
+        if "talent_tree" not in state["player"]:
+            char_class = state["player"].get("char_class", "Warrior")
+            state["player"]["talent_tree"] = {
+                "class_name": char_class,
+                "nodes": {},
+                "allocated_points": 0,
+            }
+        if "ailments" not in state["player"]:
+            state["player"]["ailments"] = []
+
+    state["schema_version"] = 3
+    return state
+
+
 # Mapping of source schema versions to their corresponding migration upgrade functions
 MIGRATION_REGISTRY: Dict[int, Any] = {
     1: migrate_v1_to_v2,
+    2: migrate_v2_to_v3,
 }
 
 
@@ -72,8 +106,31 @@ def save_game(
     quests: Dict[str, Quest],
     current_room_name: str,
     tavern_companions: List[Companion],
+    world_clock: Any = None,
+    weather_engine: Any = None,
 ) -> bool:
     """Saves the entire game state atomically using a transaction-safe temporary file and creates a backup."""
+    world_clock_data = None
+    if world_clock is not None:
+        world_clock_data = {
+            "current_index": getattr(world_clock, "current_index", 1),
+            "movement_ticks": getattr(world_clock, "movement_ticks", 0),
+        }
+
+    weather_engine_data = None
+    if weather_engine is not None:
+        state_key = "clear"
+        current_state = getattr(weather_engine, "current_state", None)
+        if current_state:
+            for k, v in getattr(weather_engine, "STATES", {}).items():
+                if v == current_state:
+                    state_key = k
+                    break
+        weather_engine_data = {
+            "current_state_key": state_key,
+            "turns_remaining": getattr(weather_engine, "turns_remaining", 15),
+        }
+
     state = {
         "schema_version": SAVE_SCHEMA_VERSION,
         "player": player.to_dict(),
@@ -82,6 +139,8 @@ def save_game(
         "current_room": current_room_name,
         "quests": {qid: q.to_dict() for qid, q in quests.items()},
         "rooms": {rname: r.to_dict() for rname, r in world.items()},
+        "world_clock": world_clock_data,
+        "weather_engine": weather_engine_data,
     }
 
     # Backup rotation
@@ -105,6 +164,29 @@ def save_game(
             except Exception:
                 pass
         return False
+
+
+class LoadGameResult(tuple):
+    """Custom tuple subclass to allow unpacking exactly 7 values for backward compatibility, while exposing extra attributes."""
+
+    def __new__(
+        cls,
+        player: Player,
+        party: List[Companion],
+        world: Dict[str, Room],
+        quests: Dict[str, Quest],
+        room_name: str,
+        tavern: List[Companion],
+        was_recovered: bool,
+        clock_data: Optional[Dict[str, Any]] = None,
+        weather_data: Optional[Dict[str, Any]] = None,
+    ):
+        inst = super().__new__(
+            cls, (player, party, world, quests, room_name, tavern, was_recovered)
+        )
+        inst.clock_data = clock_data
+        inst.weather_data = weather_data
+        return inst
 
 
 def load_game(
@@ -186,7 +268,10 @@ def load_game(
         loaded_player.current_room = loaded_world["Eldergrove Center"]
         loaded_room_name = "Eldergrove Center"
 
-    return (
+    clock_data = state.get("world_clock")
+    weather_data = state.get("weather_engine")
+
+    return LoadGameResult(
         loaded_player,
         loaded_party,
         loaded_world,
@@ -194,4 +279,6 @@ def load_game(
         loaded_room_name,
         loaded_tavern,
         was_recovered,
+        clock_data,
+        weather_data,
     )

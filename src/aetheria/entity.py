@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional
 from aetheria.models import Item, Equipment, EquipmentSlot, Spell, deserialize_item
+from aetheria.talents import SkillTree, get_tree_for_class
+from aetheria.ailments import AilmentContainer
 
 
 class Entity:
@@ -27,6 +29,7 @@ class Entity:
         self._defense = defense
         self.gold = gold
         self.spells: List[Spell] = []
+        self.ailments = AilmentContainer(self)
 
     @property
     def max_hp(self) -> int:
@@ -145,6 +148,8 @@ class Player(Entity):
         self.active_quests: List[str] = []  # Quest IDs
         self.completed_quests: List[str] = []
         self.current_room: Any = None
+        self.skill_points = 0
+        self.talent_tree = get_tree_for_class(self.char_class)
         self._init_class_spells()
 
     def _init_class_spells(self):
@@ -201,29 +206,74 @@ class Player(Entity):
                 Spell("Heal", "Divine grace heals wounds.", mana_cost=8, healing=25)
             )
 
+    def unlock_spell_from_tree(self, spell_name: str):
+        """Unlocks a special high-tier spell unlocked via the Talent Tree."""
+        spell_templates = {
+            "Shield Slam": Spell(
+                "Shield Slam",
+                "Slam your shield, dealing massive physical damage.",
+                mana_cost=8,
+                damage=35,
+                class_req="Warrior",
+            ),
+            "Meteor": Spell(
+                "Meteor",
+                "A colossal meteor strikes from above, dealing catastrophic damage.",
+                mana_cost=15,
+                damage=55,
+                class_req="Mage",
+            ),
+            "Assassinate": Spell(
+                "Assassinate",
+                "Deliver a fatal blow from the shadows.",
+                mana_cost=10,
+                damage=48,
+                class_req="Rogue",
+            ),
+            "Resurrect": Spell(
+                "Resurrect",
+                "Holy light restores massive vitality.",
+                mana_cost=12,
+                healing=50,
+                class_req="Cleric",
+            ),
+        }
+        if spell_name in spell_templates:
+            if not any(s.name == spell_name for s in self.spells):
+                self.spells.append(spell_templates[spell_name])
+
     @property
     def max_hp(self) -> int:
         bonus = sum(eq.max_hp_bonus for eq in self.equipment.values() if eq is not None)
-        return self._max_hp + bonus
+        mult = 1.0 + self.talent_tree.get_cumulative_multiplier("max_hp_multiplier")
+        return int((self._max_hp + bonus) * mult)
 
     @property
     def max_mana(self) -> int:
         bonus = sum(
             eq.max_mana_bonus for eq in self.equipment.values() if eq is not None
         )
-        return self._max_mana + bonus
+        mult = 1.0 + self.talent_tree.get_cumulative_multiplier("max_mana_multiplier")
+        return int((self._max_mana + bonus) * mult)
 
     @property
     def attack(self) -> int:
         bonus = sum(eq.attack_bonus for eq in self.equipment.values() if eq is not None)
-        return self._attack + bonus
+        mult = 1.0 + self.talent_tree.get_cumulative_multiplier("attack_multiplier")
+        return int((self._attack + bonus) * mult)
 
     @property
     def defense(self) -> int:
         bonus = sum(
             eq.defense_bonus for eq in self.equipment.values() if eq is not None
         )
-        return self._defense + bonus
+        mult = 1.0 + self.talent_tree.get_cumulative_multiplier("defense_multiplier")
+        return int((self._defense + bonus) * mult)
+
+    @property
+    def evasion(self) -> float:
+        """Returns the accumulated evasion percentage from talents."""
+        return self.talent_tree.get_cumulative_multiplier("evasion_multiplier")
 
     def equip(self, item: Equipment) -> Optional[Equipment]:
         """Equips an item, returning the previously equipped item in that slot, if any."""
@@ -252,6 +302,7 @@ class Player(Entity):
         while self.xp >= next_level_req:
             self.xp -= next_level_req
             self.level += 1
+            self.skill_points += 2
             # Scale Base Stats
             hp_gain = 15 if self.char_class == "Warrior" else 10
             mp_gain = 5 if self.char_class == "Mage" else 3
@@ -267,7 +318,7 @@ class Player(Entity):
             self.mana = self.max_mana
             announcements.append(
                 f"[bold green]LEVEL UP![/bold green] You reached Level {self.level}! "
-                f"(+{hp_gain} HP, +{mp_gain} MP, +{atk_gain} ATK, +{def_gain} DEF)"
+                f"(+{hp_gain} HP, +{mp_gain} MP, +{atk_gain} ATK, +{def_gain} DEF, +2 Skill Points)"
             )
             next_level_req = self.xp_to_next_level()
         return announcements
@@ -299,6 +350,9 @@ class Player(Entity):
             },
             "active_quests": self.active_quests,
             "completed_quests": self.completed_quests,
+            "skill_points": self.skill_points,
+            "talent_tree": self.talent_tree.to_dict(),
+            "ailments": self.ailments.to_list(),
         }
 
     @classmethod
@@ -327,6 +381,11 @@ class Player(Entity):
 
         player.active_quests = data.get("active_quests", [])
         player.completed_quests = data.get("completed_quests", [])
+        player.skill_points = data.get("skill_points", 0)
+        if "talent_tree" in data:
+            player.talent_tree = SkillTree.from_dict(data["talent_tree"])
+        if "ailments" in data:
+            player.ailments.load_from_list(data["ailments"])
         return player
 
 

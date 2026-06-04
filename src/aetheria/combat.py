@@ -3,6 +3,22 @@ from typing import Any, List, Optional, Tuple
 from aetheria.entity import Player, Companion, Enemy
 from aetheria.models import Spell, Consumable
 from aetheria.ai_engine import generate_combat_banter
+from aetheria.ailments import StatusEffect, resolve_elemental_combos
+
+SPELL_DAMAGE_TYPES = {
+    "Fireball": ("fire", "Burn"),
+    "Meteor": ("fire", "Burn"),
+    "Spark": ("lightning", "Wet"),
+    "Holy Bolt": ("lightning", "Frozen"),
+    "Smite": ("lightning", "Shock"),
+    "Slash": ("physical", None),
+    "Shield Slam": ("physical", None),
+    "Cleave": ("physical", None),
+    "Quick Strike": ("physical", None),
+    "Backstab": ("physical", None),
+    "Poison Strike": ("physical", None),
+    "Assassinate": ("physical", None),
+}
 
 
 def calculate_evasion(entity: Any) -> float:
@@ -67,6 +83,23 @@ class CombatManager:
         self.round_log = []
         self.defending = []
 
+        # 0. Tick active status ailments at the start of the round
+        all_entities = (
+            [self.player] + [c for c in self.party if c.is_alive] + [self.enemy]
+        )
+        for ent in all_entities:
+            if ent.is_alive:
+                ticks_log = ent.ailments.resolve_ticks()
+                self.round_log.extend(ticks_log)
+
+        # Check if enemy or player died from DoT tick damage at the start
+        if not self.enemy.is_alive:
+            self._process_victory()
+            return self.round_log
+        if not self.player.is_alive:
+            self._process_defeat()
+            return self.round_log
+
         # 1. Establish Turn Order (Initiative: Player & Companions go first, then Enemy)
         participants: List[Tuple[str, Any]] = [("player", self.player)]
         for companion in self.party:
@@ -122,15 +155,50 @@ class CombatManager:
         if action == "spell" and spell:
             if self.player.spend_mana(spell.mana_cost):
                 if spell.damage > 0:
-                    damage = spell.damage + int(self.player.attack * 0.5)
+                    dt, ailment_name = SPELL_DAMAGE_TYPES.get(
+                        spell.name, ("magic", None)
+                    )
+                    combo_bonus = 0
+                    combo_res = resolve_elemental_combos(self.player, self.enemy, dt)
+                    if combo_res:
+                        bonus_dmg, announcement = combo_res
+                        scaled_bonus = int(
+                            bonus_dmg * (1.0 + (self.player.level - 1) * 0.15)
+                        )
+                        combo_bonus = scaled_bonus
+                        self.round_log.append(announcement)
+
+                    damage = spell.damage + int(self.player.attack * 0.5) + combo_bonus
                     inflicted = self.enemy.take_damage(
                         damage, attacker_level=self.player.level
                     )
                     self.round_log.append(
                         f"🌟 {self.player.name} casts [bold cyan]{spell.name}[/bold cyan] at the {self.enemy.name}! "
-                        f"Deals [bold red]{inflicted}[/bold red] magical damage! "
+                        f"Deals [bold red]{inflicted}[/bold red] magical/elemental damage! "
                         f"({self.enemy.name} HP: {self.enemy.hp}/{self.enemy.max_hp})"
                     )
+
+                    # Apply status effect on 40% chance
+                    if ailment_name and random.random() < 0.40:
+                        if ailment_name == "Burn":
+                            effect = StatusEffect("Burn", duration=3, dot_damage=8)
+                        elif ailment_name == "Frozen":
+                            effect = StatusEffect(
+                                "Frozen",
+                                duration=2,
+                                stat_modifiers={"defense_multiplier": -0.20},
+                            )
+                        elif ailment_name == "Shock":
+                            effect = StatusEffect("Shock", duration=2, dot_damage=5)
+                        elif ailment_name == "Wet":
+                            effect = StatusEffect("Wet", duration=3)
+                        else:
+                            effect = None
+
+                        if effect:
+                            apply_msg = self.enemy.ailments.apply_effect(effect)
+                            self.round_log.append(apply_msg)
+
                 if spell.healing > 0:
                     self.player.heal(spell.healing)
                     self.round_log.append(
@@ -158,6 +226,15 @@ class CombatManager:
         if is_crit:
             damage = int(damage * 1.5)
 
+        combo_bonus = 0
+        combo_res = resolve_elemental_combos(self.player, self.enemy, "physical")
+        if combo_res:
+            bonus_dmg, announcement = combo_res
+            scaled_bonus = int(bonus_dmg * (1.0 + (self.player.level - 1) * 0.15))
+            combo_bonus = scaled_bonus
+            self.round_log.append(announcement)
+
+        damage += combo_bonus
         inflicted = self.enemy.take_damage(damage, attacker_level=self.player.level)
         crit_str = "[bold red]CRITICAL HIT![/bold red] " if is_crit else ""
         self.round_log.append(
@@ -201,13 +278,44 @@ class CombatManager:
         ):
             spell = dmg_spells[0]
             companion.spend_mana(spell.mana_cost)
-            damage = spell.damage + int(companion.attack * 0.3)
+
+            dt, ailment_name = SPELL_DAMAGE_TYPES.get(spell.name, ("magic", None))
+            combo_bonus = 0
+            combo_res = resolve_elemental_combos(companion, self.enemy, dt)
+            if combo_res:
+                bonus_dmg, announcement = combo_res
+                scaled_bonus = int(bonus_dmg * (1.0 + (companion.level - 1) * 0.15))
+                combo_bonus = scaled_bonus
+                self.round_log.append(announcement)
+
+            damage = spell.damage + int(companion.attack * 0.3) + combo_bonus
             inflicted = self.enemy.take_damage(damage, attacker_level=companion.level)
             self.round_log.append(
                 f"🔥 {companion.name} casts [bold cyan]{spell.name}[/bold cyan]! "
                 f"Deals [bold red]{inflicted}[/bold red] magical damage! "
                 f"({self.enemy.name} HP: {self.enemy.hp}/{self.enemy.max_hp})"
             )
+
+            # Apply ailment with 40% chance
+            if ailment_name and random.random() < 0.40:
+                if ailment_name == "Burn":
+                    effect = StatusEffect("Burn", duration=3, dot_damage=8)
+                elif ailment_name == "Frozen":
+                    effect = StatusEffect(
+                        "Frozen",
+                        duration=2,
+                        stat_modifiers={"defense_multiplier": -0.20},
+                    )
+                elif ailment_name == "Shock":
+                    effect = StatusEffect("Shock", duration=2, dot_damage=5)
+                elif ailment_name == "Wet":
+                    effect = StatusEffect("Wet", duration=3)
+                else:
+                    effect = None
+
+                if effect:
+                    apply_msg = self.enemy.ailments.apply_effect(effect)
+                    self.round_log.append(apply_msg)
             return
 
         # Default basic attack
@@ -224,6 +332,16 @@ class CombatManager:
         )
         if is_crit:
             damage = int(damage * 1.5)
+
+        combo_bonus = 0
+        combo_res = resolve_elemental_combos(companion, self.enemy, "physical")
+        if combo_res:
+            bonus_dmg, announcement = combo_res
+            scaled_bonus = int(bonus_dmg * (1.0 + (companion.level - 1) * 0.15))
+            combo_bonus = scaled_bonus
+            self.round_log.append(announcement)
+
+        damage += combo_bonus
         inflicted = self.enemy.take_damage(damage, attacker_level=companion.level)
         crit_str = "[bold red]CRITICAL HIT![/bold red] " if is_crit else ""
         self.round_log.append(
@@ -309,6 +427,16 @@ class CombatManager:
         self.round_log.append(
             f"💰 Looted [bold yellow]{gold_gained}[/bold yellow] Gold."
         )
+
+        # Procedural Loot Drop (45% chance) on hostile defeat
+        if random.random() < 0.45:
+            from aetheria.loot import generate_random_loot
+
+            custom_gear = generate_random_loot(level=self.enemy.level)
+            self.player.inventory.append(custom_gear)
+            self.round_log.append(
+                f"🎁 [bold green]Loot Drop![/bold green] The defeated {self.enemy.name} dropped: {custom_gear.name}!"
+            )
 
         # Gain Player XP
         self.round_log.append(f"✨ Gained [bold cyan]{xp_gained}[/bold cyan] XP.")
