@@ -82,7 +82,29 @@ class TestAetheriaWorld(unittest.TestCase):
             panel = get_minimap_panel(room)
             self.assertIsInstance(panel, Panel)
             # Verify basic visual properties
-            self.assertEqual(panel.title, "[bold yellow]🧭 Local Exit Map[/bold yellow]")
+            self.assertEqual(
+                panel.title, "[bold yellow]🧭 Local Exit Map[/bold yellow]"
+            )
+
+    def test_get_region_map_panel_all_rooms(self):
+        from aetheria.ui import get_region_map_panel
+        from rich.panel import Panel
+
+        for room in self.world.values():
+            panel = get_region_map_panel(room, self.world)
+            self.assertIsInstance(panel, Panel)
+            self.assertIn("Region", str(panel.title))
+
+    def test_render_room_panel_all_rooms(self):
+        from aetheria.ui import render_room_panel
+        import io
+        from unittest.mock import patch
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_out:
+            for room in self.world.values():
+                render_room_panel(room, [], self.player, world=self.world)
+                output = fake_out.getvalue()
+                self.assertIsNotNone(output)
 
 
 if __name__ == "__main__":

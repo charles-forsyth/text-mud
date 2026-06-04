@@ -223,7 +223,11 @@ class GameController:
 
         # Call the render function
         render_room_panel(
-            room, self.party, self.player, dynamic_description=dynamic_desc
+            room,
+            self.party,
+            self.player,
+            dynamic_description=dynamic_desc,
+            world=self.world,
         )
         TTSManager().speak(dynamic_desc, "Narrator")
 
