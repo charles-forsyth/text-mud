@@ -23,6 +23,11 @@ Typing action verbs without any parameters will automatically trigger an interac
 - Type `talk` or `tk`: Lists characters present and asks you who to talk to.
 - Type `recruit` or `rec`: Inside the tavern, lists all available companions to recruit into your active party.
 
+### 3. 🎨 Reimagined Animated UI
+The console interface has been completely redesigned into a unified full-screen dashboard of exactly 24 vertical lines to prevent terminal scrolling:
+- **Zero Scroll**: Room narrative, side-by-side local maps, a structured scrolling Activity Log, and integrated Quick Actions/Suggestions are locked beautifully in grid panels.
+- **Micro-Animations**: Progress bars dynamically interpolate changes to HP, Mana, and XP when stats change, rendering seamless frames over a brief timer.
+
 ---
 
 ## How to Run
