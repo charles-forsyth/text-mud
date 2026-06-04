@@ -981,13 +981,18 @@ class GameController:
                     justify="center",
                 )
                 console.print("=" * 80)
-                console.print(
-                    "With a final mighty strike, Archmage Malakor is defeated! The dark rift collapses, and sweet light returns to the lands."
+                victory_msg = (
+                    "With a final mighty strike, Archmage Malakor is defeated! "
+                    "The dark rift collapses, and sweet light returns to the lands."
                 )
-                console.print(
-                    "You are celebrated as the Grand Hero of Eldergrove and Silverlight Keep!"
-                )
+                console.print(victory_msg)
+                celebration_msg = "You are celebrated as the Grand Hero of Eldergrove and Silverlight Keep!"
+                console.print(celebration_msg)
                 console.print("Thank you for playing Aetheria Text RPG!")
+                TTSManager().speak(
+                    f"{victory_msg} {celebration_msg} Thank you for playing Aetheria Text RPG!",
+                    "Narrator",
+                )
                 self.is_running = False
                 return
 
@@ -1018,12 +1023,13 @@ class GameController:
             comp.hp = int(comp.max_hp * 0.5)
             comp.mana = comp.max_mana
 
-        console.print(
+        death_msg = (
             "Priestess Althea channels the light of the Aether to restore your soul."
         )
-        console.print(
-            f"You revive inside the sanctuary. Deducted [bold yellow]{gold_fee}[/bold yellow] Gold coin fee as tithing."
-        )
+        console.print(death_msg)
+        revive_msg = f"You revive inside the sanctuary. Deducted [bold yellow]{gold_fee}[/bold yellow] Gold coin fee as tithing."
+        console.print(revive_msg)
+        TTSManager().speak(f"{death_msg} You revive inside the sanctuary.", "Narrator")
         self.render_current_room()
 
     def trigger_quest_acceptance(self, quest_id: str):
