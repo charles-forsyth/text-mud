@@ -363,7 +363,7 @@ class CombatManager:
             if banter:
                 self.round_log.append(f'[dim]{companion.name}: "{banter}"[/dim]')
 
-    def _process_enemy_turn(self):
+    def _process_enemy_turn(self) -> None:
         # Choose a target (Player gets targeted 60% of the time, companions 40%)
         target: Any = self.player
         if self.party and random.random() < 0.40:
