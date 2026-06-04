@@ -10,6 +10,7 @@ def render_stat_progress_bar(
     bar_char: str = "█",
     empty_char: str = "░",
     color_scheme: str = "default",
+    suffix: str = "",
 ) -> Text:
     """
     Constructs a stylized horizontal graphical progress meter.
@@ -50,5 +51,7 @@ def render_stat_progress_bar(
     meter_text.append(empty_part, style="dim grey37")
     meter_text.append("] ", style="dim white")
     meter_text.append(f"{current}/{max_val}", style=f"bold {color}")
+    if suffix:
+        meter_text.append(suffix)
 
     return meter_text
