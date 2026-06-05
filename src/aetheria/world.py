@@ -133,22 +133,22 @@ def build_default_world() -> Dict[str, Room]:
     # ==================== TOWN #1: ELDERGROVE ====================
     eldergrove_center = Room(
         "Eldergrove Center",
-        "A peaceful village square shaded by a gigantic golden oak. Wind chimes chime softly in the breeze.",
+        "The heart of Eldergrove beat beneath the sheltering boughs of a monolithic, golden-leaved oak that had stood for a thousand summers. Sunlight filters through the shimmering canopy, casting a warm, dappled amber glow across the cobblestone plaza. The air carries the sweet scent of wildflowers, freshly baked bread, and damp pine needles, while wind chimes suspended from ancient branches sing a soft, melodic lullaby with every passing breeze.",
         is_town=True,
     )
     eldergrove_tavern = Room(
         "Eldergrove Tavern (The Golden Oak)",
-        "A warm, rowdy tavern smelling of roasted pork and honey mead. Active travelers sit around the fireplace.",
+        "A heavy oak door yields to reveal a cozy, boisterous haven awash in the comforting warmth of a crackling hearth. The scent of slow-roasted pork glazes, spiced honey mead, and rich cedarwood smoke hangs thick in the air. Laughter and lively folk songs echo off the low timber rafters, where seasoned adventurers and weary travelers swap tall tales over frosty tankards of golden ale.",
         is_town=True,
     )
     eldergrove_blacksmith = Room(
         "Eldergrove Blacksmith (Iron & Ash)",
-        "An open-air forge glowing with heat. Hammer blows ring out as weapons and steel armor are cooled in water.",
+        "Heat radiates from an open-air forge like a physical wave, stinging the skin and carrying the pungent bite of coal smoke and molten metal. The ringing rhythm of Thorin’s heavy hammer striking red-hot steel vibrates through the ground, punctuated by the violent, escaping hiss of steam as forged blades are plunged into iron troughs of cooling spring water.",
         is_town=True,
     )
     eldergrove_temple = Room(
         "Eldergrove Temple (Aether Sanctuary)",
-        "A tranquil, quiet temple of soft white stone. Clerics offer restorative water to wounded travelers.",
+        "A sanctuary of absolute serenity, built from pristine blocks of soft white marble that seem to absorb and diffuse the harsh light of the outside world. The air is cool and smells faintly of crushed sage and incense, and the gentle murmur of natural spring water flowing into a central font provides a tranquil backdrop. Here, clerics tend to the sick and offer restorative draughts.",
         is_town=True,
     )
 
@@ -187,19 +187,19 @@ def build_default_world() -> Dict[str, Room]:
     # Whisperwood is south of Eldergrove Center
     forest_entrance = Room(
         "Whisperwood Entrance",
-        "The light dims as dense trees block the sun. Thick, twisting roots crawl across the mossy floor.",
+        "The bright skies of Eldergrove vanish, swallowed by the dense, suffocating canopy of the Whisperwood. A heavy, perpetual twilight hangs beneath the branches, where thick, ancient roots crawl like sleeping serpents across a damp floor of spongy green moss. The forest is quiet—too quiet—save for the low, rhythmic sighing of the wind through high leaves that sounds unsettlingly like human whispers.",
     )
     goblin_outpost = Room(
         "Goblin Outpost",
-        "A makeshift camp littered with wooden spikes and animal bones. A smelly campfire smokes in the center.",
+        "A chaotic, makeshift barricade constructed from jagged, fire-hardened logs and crudely lashed wooden stakes. Splintered bones of forest beasts lie scattered in the mud around a sputtering, foul-smelling campfire that billows columns of acrid black smoke. The sickening odor of wet hide, rot, and stale grease clings to the humid air, warning of the hostile sentries lurking in the shadows.",
     )
     whispering_glade = Room(
         "Whispering Glade",
-        "A serene forest clearing where mystical light leaks through the canopy. Glowing blue herbs grow here.",
+        "An enchanting, pristine oasis hidden deep within the dark forest, where a vertical shaft of ethereal, pale-blue starlight pierces the canopy. Luminescent azure flora and delicate glowing mushrooms line the perimeter, pulsing softly with an inner magical heartbeat. The air is remarkably crisp and energized with wild magic, humming with a gentle, static-like resonance.",
     )
     ancient_oak_cave = Room(
         "Ancient Oak Cave",
-        "A cavernous hollow inside the roots of a giant dead oak. Spooky forest runes glow dimly on the bark.",
+        "A damp, cavernous hollow carved into the subterranean root network of a colossal, fossilized dead oak. The ceiling is draped with hanging roots that slowly drip icy moisture onto the cold stone floor below. Cryptic runes of some long-forgotten, corrupted forest deity glow with a faint, malevolent purple radiance along the gnarled bark walls, filling the dark void with a heavy sense of impending doom.",
     )
 
     # Set up Whisperwood Exits
@@ -275,16 +275,16 @@ def build_default_world() -> Dict[str, Room]:
     # Connected via a portal/bridge after defeating the Forest Ancient (or directly east from Eldergrove Blacksmith, but locked!)
     silverlight_bridge = Room(
         "Silverlight Bridge",
-        "A majestic stone bridge spanning a roaring white-water canyon. Beautiful white towers guard the gate ahead.",
+        "A majestic, soaring span of pure white granite that arches gracefully over a churning, deafening white-water chasm. Below, a roaring mountain river crashes violently against jagged rocks, sending a cool, refreshing mist high into the air. Pristine, fortified guard towers of immaculate stone stand vigilant at the eastern gate, their battlements flying the royal sapphire banners of Silverlight.",
     )
     silverlight_square = Room(
         "Silverlight Keep Square",
-        "A grand city paved with pristine marble. Statues of noble knights stand watch, and flags ripple in the wind.",
+        "A spectacular, sprawling urban plaza paved with polished marble tiles that gleam brilliantly under the sky. Massive, lifelike statues of legendary knights in full plate armor stand sentinel around a grand fountain, their stone eyes gazing toward the horizon. Tall spires rise majestically into the heavens, and giant royal flags ripple with a crisp, snapping sound in the high mountain wind.",
         is_town=True,
     )
     silverlight_smithy = Room(
         "Silverlight Royal Armory",
-        "A premium armory displaying polished steel breastplates and heavy, glowing magical weapons.",
+        "An exquisite, high-ceilinged hall of stone and polished mahogany, reflecting the brilliant, cold glare of immaculate steel. The walls are lined with heavy breastplates, masterfully folded shields, and pristine weapons that hum with integrated magical enchantments. The air is crisp and carries the dry, clean smell of leather straps, polishing oils, and cold, powerful iron.",
         is_town=True,
     )
 
@@ -318,19 +318,19 @@ def build_default_world() -> Dict[str, Room]:
     # South of Silverlight Square lies the final massive dungeon
     shadowspire_gates = Room(
         "Shadowspire Gates",
-        "The imposing iron gates of Castle Shadowspire. Thunder rumbles overhead, and purple lightning cracks.",
+        "The immense, black-iron gates of Castle Shadowspire rise like jagged, broken teeth against a bruised, storm-swept sky. Thunder rumbles continuously, vibrating in the chest, while erratic arcs of crackling violet lightning silhouette the sharp, menacing towers of the fortress. A freezing, unnatural wind howls through the iron bars, carrying the scent of ozone and ancient decay.",
     )
     shadowspire_courtyard = Room(
         "Shadowspire Courtyard",
-        "A spooky courtyard filled with gargoyles and dead fountains. Shadows dance along the cobblestone walls.",
+        "A desolate, wind-scoured courtyard littered with cracked cobblestones and choked with withered, black brambles. Skeletal gargoyles with empty, mocking stares perch atop crumbling battlements, and dry, long-dead stone fountains are filled with nothing but autumn dust and bone fragments. Shadows pool unnaturally deep in the corners, stretching and shifting of their own accord.",
     )
     spire_laboratory = Room(
         "Alchemical Laboratory",
-        "A dark lab full of boiling cauldrons, strange colored glass beakers, and shelves of ancient magical books.",
+        "A dark, cluttered sanctuary of forbidden knowledge, smelling heavily of sulfur, volatile chemicals, and ancient, dusty parchment. Shelves groaning under the weight of bizarre leather-bound grimoires surround bubbling cauldrons and complex glass apparatuses that drip glowing green and crimson liquids. A constant, ominous hum of dark magical energy resonates from the stone floor.",
     )
     shadow_throne_room = Room(
         "Shadow Throne Room",
-        "The grand throne room where Archmage Malakor sits upon a throne of obsidian, channeling a giant floating dark void.",
+        "A vast, cathedral-like hall of obsidian stone, cold as the grave. Towering pillars of black rock ascend into absolute darkness, where a colossal, swirling rift of pure void-energy hovers menacingly behind a throne of jagged volcanic glass. The air is thin and freezing, smelling strongly of ozone and burnt ash, as the void rift slowly pulls at the light and sound of the room with a deep, crushing silence.",
     )
 
     # Setup Shadowspire Exits
