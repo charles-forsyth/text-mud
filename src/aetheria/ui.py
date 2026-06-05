@@ -424,7 +424,7 @@ def _print_layout_frame(
     desc = dynamic_description if dynamic_description else room.description
     room_details.append(f"[italic]{desc}[/italic]\n")
 
-    # Group environmental status (Clock, Weather, Exits) into a single compact line
+    # Environmental status neatly separated
     env_parts = []
     if world_clock:
         env_parts.append(f"⏳ [bold yellow]{world_clock.current_time}[/bold yellow]")
@@ -433,13 +433,38 @@ def _print_layout_frame(
         env_parts.append(
             f"🌦️  [{c_state.visual_style}]{c_state.name}[/{c_state.visual_style}]"
         )
+    if env_parts:
+        room_details.append(
+            "🌍 [bold green]Environment:[/bold green] " + "  •  ".join(env_parts)
+        )
 
-    exits_str = ", ".join(
-        f"[bold green]{direction}[/bold green]" for direction in room.exits.keys()
-    )
-    env_parts.append(f"🚪 Exits: {exits_str if exits_str else '[dim]None[/dim]'}")
+    # Detailed navigation directions with exact target room names
+    navigation_parts = []
+    for direction, target_room in room.exits.items():
+        if target_room:
+            lock_status = " 🔒 [red][Locked][/red]" if target_room.locked else ""
+            navigation_parts.append(
+                f"[bold green]{direction.upper()}[/bold green] → [bold cyan]{target_room.name}[/bold cyan]{lock_status}"
+            )
+    if navigation_parts:
+        nav_str = "  •  ".join(navigation_parts)
+    else:
+        nav_str = "[dim]No exits visible.[/dim]"
+    room_details.append(f"🚪 [bold green]Navigation:[/bold green] {nav_str}")
 
-    room_details.append("  •  ".join(env_parts))
+    # Active environmental hazards
+    if room.hazard:
+        h = room.hazard
+        mitigation_str = (
+            f" (Mitigated by [bold yellow]{h.mitigation_item}[/bold yellow])"
+            if h.mitigation_item
+            else ""
+        )
+        room_details.append(
+            f"⚠️  [bold red]Hazard Active:[/bold red] [bold deep_pink4]{h.hazard_type}[/bold deep_pink4] "
+            f"([bold orange3]{h.damage_per_tick} DMG/tick[/bold orange3])"
+            f" - [italic red]{h.description}[/italic red]{mitigation_str}"
+        )
 
     # Group presence status (NPCs, Enemy, Loot) into a single compact line
     pres_parts = []
@@ -463,7 +488,9 @@ def _print_layout_frame(
     else:
         pres_parts.append("📦 Loot: [dim]None[/dim]")
 
-    room_details.append("  •  ".join(pres_parts))
+    room_details.append(
+        "👥 [bold green]Presence:[/bold green] " + "  •  ".join(pres_parts)
+    )
 
     if message_log is not None:
         # PREMIUM UI/UX TUI DASHBOARD RENDER PATH
